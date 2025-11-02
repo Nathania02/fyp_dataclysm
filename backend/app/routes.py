@@ -102,6 +102,7 @@ async def create_run(
 @router.get("/runs", response_model=List[ModelRunResponse])
 async def get_runs(current_user: dict = Depends(get_current_user)):
     runs = RunStorage.get_by_user(current_user['id'])
+    print(runs)
     return sorted(runs, key=lambda x: x['created_at'], reverse=True)
 
 @router.get("/runs/{run_id}", response_model=ModelRunResponse)
@@ -189,7 +190,13 @@ async def add_note(
     if not run['folder_path']:
         raise HTTPException(status_code=404, detail="Run folder not found")
     
+    print(run['folder_path'])
     notes_file = os.path.join(run['folder_path'], 'notes_feedback.txt')
+    notes_directory = os.path.dirname(notes_file)
+    
+    # Create the directory (and any parent directories)
+    # exist_ok=True prevents an error if the directory already exists
+    os.makedirs(notes_directory, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(notes_file, 'a') as f:
         f.write(f"\n[{timestamp}] Note by {current_user['email']}:\n")

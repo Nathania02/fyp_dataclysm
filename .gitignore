@@ -9,6 +9,7 @@
 .DS_Store
 /backend/users.json
 /backend/notifications.json
-/backend/run.json
+/backend/runs.json
+/backend/model_runs_results/
 
 .vscode/

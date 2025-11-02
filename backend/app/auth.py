@@ -8,9 +8,12 @@ from app.config import settings
 from app.storage import UserStorage
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHash
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import OAuth2PasswordBearer
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/auth/login", auto_error=False)
 ph = PasswordHasher()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -46,7 +49,24 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+def get_token_from_header_or_query(request: Request, token_from_header: str = Depends(oauth2_scheme_optional)) -> str:
+    if token_from_header:
+        return token_from_header
+
+    # If header is missing, check query parameters
+    token_from_query = request.query_params.get("token")
+    if not token_from_query:
+        # If it's not in the header OR query params, raise the 401
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # If we found it in the query, return that
+    return token_from_query
+
+async def get_current_user(token: str = Depends(get_token_from_header_or_query)) -> dict:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

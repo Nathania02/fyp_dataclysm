@@ -71,6 +71,7 @@ class RunStorage:
     @staticmethod
     def get_by_user(user_id: int) -> List[Dict]:
         runs = _read_json(settings.RUNS_FILE)
+        print(runs)
         return [r for r in runs if r['user_id'] == user_id]
     
     @staticmethod
