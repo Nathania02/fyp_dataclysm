@@ -14,3 +14,5 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
 )
+
+celery_app.conf.include = ['app.model_tasks']
