@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     REDIS_URL: str
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
+
+    MAILJET_API_KEY: str
+    MAILJET_API_SECRET: str
+    MAILJET_FROM_EMAIL: str
+    MAILJET_FROM_NAME: str = "Model Training Platform"
+    FRONTEND_URL: str = "http://localhost:5173"
     
     # Storage Configuration
     RESULTS_DIR: str = "model_runs_results"
@@ -18,7 +24,8 @@ class Settings(BaseSettings):
     NOTIFICATIONS_FILE: str = "notifications.json"
     
     class Config:
-        env_file = ".env",
+        env_file = ".env"
         extra = "ignore"
+        env_file_encoding = "utf-8"
 
 settings = Settings()
