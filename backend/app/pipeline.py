@@ -2,7 +2,7 @@
 Consensus K-Means Clustering Pipeline
 Based on Seymour et al. methodology for phenotype discovery
 """
-
+import duckdb
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 
 class ConsensusKMeans:
     """
-    Consensus K-Means clustering implementation following Seymour et al.
+    Consensus K-Means clustering implementation
     """
     
     def __init__(self, k_range=range(2, 7), n_iterations=100, 
@@ -638,8 +638,24 @@ class ConsensusKMeans:
         
         print(f"\nAll plots saved to: {output_path}")
 
+def data_loader_duckdb(db_path, table_name):
+    """
+    Load data from DuckDB database into a pandas DataFrame.
+    
+    Args:
+        db_path: Path to DuckDB database file
+        table_name: Name of the table to load
+    Returns:
+        df: Loaded DataFrame
+    """
 
-def run_consensus_pipeline(df, exclude_cols, folder_path, k_range=range(2, 7), 
+    conn = duckdb.connect(db_path)
+    query = f"SELECT * FROM {table_name}"
+    df = conn.execute(query).fetchdf()
+    conn.close()
+    return df
+
+def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7), 
                            n_iterations=100, subsample_fraction=0.8,
                            correlation_threshold=0.8, log_transform=False,
                            subsample_data=None, output_dir='results',
@@ -672,7 +688,7 @@ def run_consensus_pipeline(df, exclude_cols, folder_path, k_range=range(2, 7),
     print("\n" + "="*80)
     print("CONSENSUS K-MEANS CLUSTERING PIPELINE")
     print("="*80)
-    print(f"folder path: {folder_path}")
+    print(f"folder path / output dir: {output_dir}")
     print(f"Input data: {df.shape[0]:,} rows, {df.shape[1]} columns")
     
     # Subsample data if requested
@@ -758,6 +774,7 @@ def run_consensus_pipeline(df, exclude_cols, folder_path, k_range=range(2, 7),
     return results
 
 
+
 # Example usage
 if __name__ == "__main__":
     """
@@ -766,32 +783,33 @@ if __name__ == "__main__":
     
     # Example 1: Basic usage with DuckDB
     # import duckdb
-    # conn = duckdb.connect("your_database.duckdb")
-    # df = conn.execute("SELECT * FROM your_table").fetchdf()
-    # conn.close()
-    
+    df = data_loader_duckdb('../../data/final_imputed_output_26102025.duckdb', 'final_imputed_output_26102025')
+
     # Example 2: Using the pipeline
-    # results = run_consensus_pipeline(
-    #     df=df,
-    #     exclude_cols=['stay_id', 'hour', 'model', 'all_icd_codes', 
-    #                   'all_icd_versions', 'is_sepsis', 'sofa_total'],
-    #     k_range=range(2, 7),
-    #     n_iterations=100,
-    #     subsample_fraction=0.8,
-    #     subsample_data=0.02,  # Use 2% of data
-    #     output_dir='consensus_results',
-    #     random_state=42
-    # )
+    results = run_consensus_pipeline(
+        df=df,
+        exclude_cols=['stay_id', 'hour', 'model', 'all_icd_codes', 
+                      'all_icd_versions', 'is_sepsis', 'sofa_total'],
+        # folder_path='your_folder_path',
+        k_range=range(2, 7),
+        n_iterations=100,
+        correlation_threshold=0.8,
+        log_transform=False,
+        subsample_fraction=0.8,
+        subsample_data=0.02,  # Use 2% of data
+        output_dir='testing',
+        manual_k=None,
+        random_state=42
+    )
     
     # Example 3: Access results
-    # model = results['model']
-    # df_phenotypes = results['df_with_phenotypes']
-    # optimal_k = results['optimal_k']
-    # labels = results['labels']
+    model = results['model']
+    df_phenotypes = results['df_with_phenotypes']
+    optimal_k = results['optimal_k']
+    labels = results['labels']
     
     # Example 4: Generate additional analysis
-    # feature_names = results['feature_names']
-    # phenotype_profiles = df_phenotypes.groupby('phenotype')[feature_names].mean()
-    # print(phenotype_profiles)
-    
+    feature_names = results['feature_names']
+    phenotype_profiles = df_phenotypes.groupby('phenotype')[feature_names].mean()
+    print(phenotype_profiles)
     pass
