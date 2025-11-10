@@ -1,8 +1,10 @@
 import os
 import shutil
+import json
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import Form, File, Depends, APIRouter, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from celery.result import AsyncResult
 from app.storage import UserStorage, RunStorage, NotificationStorage
@@ -15,7 +17,8 @@ from app.auth import (
     verify_password, get_password_hash, create_access_token, get_current_user
 )
 from app.config import settings
-from app.tasks import train_model
+from app.model_tasks import train_model
+from app.email import send_clinician_review_email
 
 router = APIRouter()
 
@@ -58,27 +61,53 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 # Model run routes
 @router.post("/runs", response_model=ModelRunResponse)
 async def create_run(
-    model_data: ModelRunCreate,
-    file: UploadFile = File(...),
+    model_data: str = Form(...), 
+    # dataset_name: str = Form(...), 
+    # file: UploadFile = File(...),
+    # current_user: dict = Depends(get_current_user)
+    # model_data: ModelRunCreate,
+    dataset_file: UploadFile = File(...),
+    parameters_file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
+    
+    model_data_dict = json.loads(model_data)
+    print("Received model data:", model_data_dict)
+        # 3. Validate into the Pydantic model (string "kmeans" becomes ModelType.kmeans)
+    model_data_obj = ModelRunCreate(**model_data_dict)
+
     # Create run record
+    print("Details of new run taken in, creating record...")
+    # This will print the string "kmeans"
+    print(model_data_obj.model_type.value)
+    print(model_data_obj.dataset_name)
     run = RunStorage.create({
         'user_id': current_user['id'],
-        'model_type': model_data.model_type.value,
-        'dataset_filename': file.filename
+        'model_type': model_data_obj.model_type.value,
+        'dataset_filename': dataset_file.filename,
+        'parameters_filename': parameters_file.filename,
     })
     
     # Create folder name: <model>_run<runid>_<datetime>
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    folder_name = f"{model_data.model_type.value}_run{run['id']}_{timestamp}"
-    folder_path = os.path.join(settings.RESULTS_DIR, folder_name)
+    folder_name = f"{model_data_obj.model_type}_run{run['id']}_{timestamp}"
+    # folder_path = os.path.join(settings.RESULTS_DIR, folder_name)
     
+    results_dir = Path(settings.RESULTS_DIR)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    folder_path = results_dir / folder_name
     # Save uploaded file
     os.makedirs(folder_path, exist_ok=True)
-    dataset_path = os.path.join(folder_path, file.filename)
-    with open(dataset_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # dataset_path = os.path.join(absolute_folder_path, dataset_file.filename)
+    abs_dataset_path = (folder_path/dataset_file.filename).resolve()
+    print(abs_dataset_path)
+
+    with open(abs_dataset_path, "wb") as buffer:
+        shutil.copyfileobj(dataset_file.file, buffer)
+
+    abs_parameters_path = (folder_path/parameters_file.filename).resolve()
+    with open(abs_parameters_path, "wb") as buffer:
+        shutil.copyfileobj(parameters_file.file, buffer)
     
     # Update run with folder path
     RunStorage.update(run['id'], {'folder_path': folder_path})
@@ -86,9 +115,11 @@ async def create_run(
     # Start Celery task
     task = train_model.delay(
         run['id'], 
-        model_data.model_type.value, 
-        dataset_path, 
-        folder_path
+        model_data_obj.model_type.value,
+        str(abs_dataset_path).replace("\\", "/"),
+        str(abs_parameters_path).replace("\\", "/"),
+        model_data_obj.dataset_name, 
+        str(folder_path).replace("\\", "/")
     )
     
     # Update with task ID and status
@@ -101,15 +132,19 @@ async def create_run(
 
 @router.get("/runs", response_model=List[ModelRunResponse])
 async def get_runs(current_user: dict = Depends(get_current_user)):
-    runs = RunStorage.get_by_user(current_user['id'])
-    print(runs)
+    if current_user['role'] == 'data_scientist':
+        runs = RunStorage.get_all()
+    if current_user['role'] == 'clinician':
+        runs = RunStorage.get_all()
+        runs = [r for r in runs if r['sent_to_clinician']]
+        # runs = RunStorage.get_by_user(current_user['id'])
     return sorted(runs, key=lambda x: x['created_at'], reverse=True)
 
 @router.get("/runs/{run_id}", response_model=ModelRunResponse)
 async def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
     run = RunStorage.get_by_id(run_id)
-    if not run or run['user_id'] != current_user['id']:
-        raise HTTPException(status_code=404, detail="Run not found")
+    # if not run or run['user_id'] != current_user['id']:
+    #     raise HTTPException(status_code=404, detail="Run not found")
     
     # Check task status if running
     if run['status'] == 'running' and run['celery_task_id']:
@@ -130,8 +165,8 @@ async def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
 @router.get("/runs/{run_id}/plots")
 async def get_run_plots(run_id: int, current_user: dict = Depends(get_current_user)):
     run = RunStorage.get_by_id(run_id)
-    if not run or run['user_id'] != current_user['id']:
-        raise HTTPException(status_code=404, detail="Run not found")
+    # if not run or run['user_id'] != current_user['id']:
+    #     raise HTTPException(status_code=404, detail="Run not found")
     
     # Get all PNG files from folder
     plots = []
@@ -149,8 +184,8 @@ async def get_plot_file(
     current_user: dict = Depends(get_current_user)
 ):
     run = RunStorage.get_by_id(run_id)
-    if not run or run['user_id'] != current_user['id']:
-        raise HTTPException(status_code=404, detail="Run not found")
+    # if not run or run['user_id'] != current_user['id']:
+    #     raise HTTPException(status_code=404, detail="Run not found")
     
     if not run['folder_path']:
         raise HTTPException(status_code=404, detail="Run folder not found")
@@ -164,8 +199,8 @@ async def get_plot_file(
 @router.get("/runs/{run_id}/notes")
 async def get_notes(run_id: int, current_user: dict = Depends(get_current_user)):
     run = RunStorage.get_by_id(run_id)
-    if not run or run['user_id'] != current_user['id']:
-        raise HTTPException(status_code=404, detail="Run not found")
+    # if not run or run['user_id'] != current_user['id']:
+    #     raise HTTPException(status_code=404, detail="Run not found")
     
     if not run['folder_path']:
         raise HTTPException(status_code=404, detail="Run folder not found")
@@ -242,6 +277,7 @@ async def add_feedback(
 @router.post("/runs/{run_id}/send-to-clinician")
 async def send_to_clinician(
     run_id: int,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
     run = RunStorage.get_by_id(run_id)
@@ -253,10 +289,13 @@ async def send_to_clinician(
     
     # Mark as sent to clinician
     RunStorage.update(run_id, {'sent_to_clinician': True})
+    hardcoded_test_email = "nathaniayeo.2022@scis.smu.edu.sg"
     
     # Create notifications for all clinicians
     all_users = UserStorage.get_all()
     clinicians = [u for u in all_users if u['role'] == 'clinician']
+
+    message = f"The model run #{run_id} has been sent to you for review. Please log in to the platform to view the results and provide feedback."
     
     for clinician in clinicians:
         NotificationStorage.create({
@@ -264,6 +303,13 @@ async def send_to_clinician(
             'run_id': run_id,
             'message': f"Model run #{run_id} completed. Waiting for your feedback."
         })
+
+        send_clinician_review_email(
+            to_email=clinician['email'],
+            to_name=clinician['email'].split('@')[0],
+            run_id=run_id,
+            data_scientist_name=current_user['email'].split('@')[0]
+        )
     
     return {"status": "success"}
 
@@ -271,6 +317,7 @@ async def send_to_clinician(
 @router.get("/notifications", response_model=List[NotificationResponse])
 async def get_notifications(current_user: dict = Depends(get_current_user)):
     notifications = NotificationStorage.get_by_user(current_user['id'])
+    print("notifications:", notifications)
     return sorted(notifications, key=lambda x: x['created_at'], reverse=True)
 
 @router.put("/notifications/{notification_id}/read")

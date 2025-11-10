@@ -37,8 +37,10 @@ class UserResponse(BaseModel):
     role: str
     created_at: str
 
+# note: can possibly remove
 class ModelRunCreate(BaseModel):
     model_type: ModelType
+    dataset_name: str
 
 class ModelRunResponse(BaseModel):
     id: int

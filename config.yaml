@@ -1,0 +1,16 @@
+range:
+  k_min: 2
+  k_max: 4
+
+hyperparameters:
+  max_iter: 100
+  n_init: 10
+  random_state: 42
+
+columns_to_exclude:
+  - stay_id
+  - respiratory_rate
+
+
+
+

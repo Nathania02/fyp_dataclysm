@@ -8,17 +8,28 @@
       
       <form @submit.prevent="handleSubmit">
         <div class="form-group">
-          <label for="dataset">Upload Dataset (CSV)</label>
+          <label for="dataset">Upload Dataset (duckdb)</label>
           <input
             id="dataset"
             type="file"
-            accept=".csv"
+            accept=".duckdb"
             class="form-control"
-            @change="handleFileChange"
+            @change="handleDatasetChange"
             required
           />
         </div>
-        
+
+        <div class="form-group">
+          <label for="datasetName">Dataset Name</label>
+          <input type="text"
+                id="datasetName" 
+                v-model="datasetName" 
+                class="form-control" 
+                placeholder="Enter the dataset name"
+                required
+                />
+        </div>
+
         <div class="form-group">
           <label for="model">Choose Model</label>
           <select id="model" v-model="modelType" class="form-control" required>
@@ -27,6 +38,18 @@
             <option value="kmeans_dtw">K-Means with DTW for Temporal</option>
             <option value="lca">Latent Class Analysis (LCA)</option>
           </select>
+        </div>
+
+        <div class="form-group">
+          <label for="parameters">Upload config file</label>
+          <input
+            id="parameters"
+            type="file"
+            accept=".yaml"
+            class="form-control"
+            @change="handleParamsChange"
+            required
+          />
         </div>
         
         <div style="display: flex; gap: 1rem;">
@@ -47,27 +70,38 @@ import api from '../api'
 
 const router = useRouter()
 const modelType = ref('')
-const file = ref(null)
+const datasetName = ref('')
+const datasetFile = ref(null)
+const parameterFile = ref(null)
 const error = ref('')
 const success = ref('')
 const submitting = ref(false)
 
-const handleFileChange = (event) => {
-  file.value = event.target.files[0]
+const handleDatasetChange = (event) => {
+  datasetFile.value = event.target.files[0]
 }
 
+const handleParamsChange = (event) => {
+  parameterFile.value = event.target.files[0]
+}
 const handleSubmit = async () => {
   try {
     error.value = ''
     success.value = ''
     submitting.value = true
     
-    if (!file.value) {
-      error.value = 'Please select a file'
+    if (!datasetFile.value || !parameterFile.value) {
+      error.value = 'Please select a dataset and a configuration file'
+      submitting.value = false // Make sure to stop submitting
       return
     }
     
-    const response = await api.createRun(modelType.value, file.value)
+    const response = await api.createRun(
+      modelType.value, 
+      datasetName.value, 
+      datasetFile.value,
+      parameterFile.value
+    )
     success.value = 'Model training started successfully!'
     
     setTimeout(() => {

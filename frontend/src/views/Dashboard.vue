@@ -2,12 +2,29 @@
   <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
       <h2>Model Runs</h2>
-      <router-link 
-        to="/new-run" 
-        class="btn btn-primary"
-      >
-        Run New Model
-      </router-link>
+      <div style="display: flex; gap: 1rem;">
+        <button 
+          v-if="!selectMode" 
+          @click="toggleSelectMode" 
+          class="btn btn-secondary"
+        >
+          Select Runs
+        </button>
+        <template v-else>
+          <button @click="compareRuns" class="btn btn-primary" :disabled="selectedRuns.length < 2">
+            Compare Runs ({{ selectedRuns.length }})
+          </button>
+          <button @click="cancelSelectMode" class="btn btn-secondary">
+            Cancel
+          </button>
+        </template>
+        <router-link 
+          to="/new-run" 
+          class="btn btn-primary"
+        >
+          Run New Model
+        </router-link>
+      </div>
     </div>
     
     <div v-if="loading" class="loading">
@@ -17,14 +34,30 @@
     <div v-else-if="runs.length === 0" class="card">
       <p style="text-align: center; color: #7f8c8d;">
         No model runs yet. 
-        <router-link to="/new-run" v-if="authStore.isDataScientist">
+        <router-link to="/new-run">
           Start your first run
         </router-link>
       </p>
     </div>
     
     <div v-else class="card-grid">
-      <div v-for="run in runs" :key="run.id" class="card" @click="goToRun(run.id)" style="cursor: pointer;">
+      <div 
+        v-for="run in runs" 
+        :key="run.id" 
+        class="card"
+        :class="{ 'card-selected': selectedRuns.includes(run.id) }"
+        @click="selectMode ? toggleRunSelection(run.id) : goToRun(run.id)" 
+        style="cursor: pointer; position: relative;"
+      >
+        <div v-if="selectMode" class="checkbox-overlay">
+          <input 
+            type="checkbox" 
+            :checked="selectedRuns.includes(run.id)"
+            @click.stop="toggleRunSelection(run.id)"
+            class="run-checkbox"
+          />
+        </div>
+        
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
           <h3 style="margin: 0;">Run #{{ run.id }}</h3>
           <span class="status-badge" :class="run.status">{{ run.status }}</span>
@@ -61,6 +94,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const runs = ref([])
 const loading = ref(true)
+const selectMode = ref(false)
+const selectedRuns = ref([])
 
 const fetchRuns = async () => {
   try {
@@ -75,7 +110,39 @@ const fetchRuns = async () => {
 }
 
 const goToRun = (id) => {
-  router.push(`/runs/${id}`)
+  if (!selectMode.value) {
+    router.push(`/runs/${id}`)
+  }
+}
+
+const toggleSelectMode = () => {
+  selectMode.value = true
+  selectedRuns.value = []
+}
+
+const cancelSelectMode = () => {
+  selectMode.value = false
+  selectedRuns.value = []
+}
+
+const toggleRunSelection = (runId) => {
+  const index = selectedRuns.value.indexOf(runId)
+  if (index > -1) {
+    selectedRuns.value.splice(index, 1)
+  } else {
+    selectedRuns.value.push(runId)
+  }
+}
+
+const compareRuns = () => {
+  if (selectedRuns.value.length < 2) {
+    alert('Please select at least 2 runs to compare')
+    return
+  }
+  router.push({
+    name: 'CompareRuns',
+    query: { ids: selectedRuns.value.join(',') }
+  })
 }
 
 const formatModelType = (type) => {
@@ -97,3 +164,23 @@ onMounted(() => {
   setInterval(fetchRuns, 10000)
 })
 </script>
+
+<style scoped>
+.card-selected {
+  border: 2px solid #3498db;
+  background: #e3f2fd;
+}
+
+.checkbox-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+}
+
+.run-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+</style>

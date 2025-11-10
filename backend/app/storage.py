@@ -85,6 +85,8 @@ class RunStorage:
             'status': 'pending',
             'folder_path': None,
             'dataset_filename': run_data.get('dataset_filename'),
+            'dataset_name': run_data.get('dataset_name'),
+            'parameters_filename': run_data.get('parameters_filename'),
             'optimal_clusters': None,
             'created_at': datetime.utcnow().isoformat(),
             'completed_at': None,

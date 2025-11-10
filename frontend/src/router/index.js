@@ -6,6 +6,7 @@ import Dashboard from '../views/Dashboard.vue'
 import NewRun from '../views/NewRun.vue'
 import RunDetails from '../views/RunDetails.vue'
 import Notifications from '../views/Notifications.vue'
+import CompareRuns from '../views/CompareRuns.vue'
 
 const routes = [
   {
@@ -43,6 +44,12 @@ const routes = [
     name: 'Notifications',
     component: Notifications,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/compare-runs',
+    name: 'CompareRuns',
+    component: CompareRuns,
+    meta: { requiresAuth: true }
   }
 ]
 
@@ -71,18 +78,18 @@ router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   
   // --- Temporarily commented out for layout checks ---
-//   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-//     next('/login')
-//   } else if (!to.meta.requiresAuth && authStore.isAuthenticated) {
-//     next('/')
-//   } else {
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    next('/login')
+  } else if (!to.meta.requiresAuth && authStore.isAuthenticated) {
+    next('/')
+  } else {
   // --- End of temporary comments ---
 
     if (authStore.isAuthenticated && !authStore.user) {
       await authStore.fetchUser()
     }
     next() // <-- This now runs every time
-//   }
+  }
 })
 
 export default router

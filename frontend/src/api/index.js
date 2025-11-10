@@ -44,10 +44,17 @@ export default {
   },
 
   // Runs
-  createRun(modelType, file) {
+  createRun(modelType, datasetName, datasetFile, parametersFile) {
     const formData = new FormData()
-    formData.append('file', file)
-    return api.post(`/runs?model_type=${modelType}`, formData, {
+    formData.append('dataset_file', datasetFile)
+    formData.append('parameters_file', parametersFile)
+
+    const modelData = {
+      model_type: modelType,
+      dataset_name: datasetName
+    }
+    formData.append('model_data', JSON.stringify(modelData))    
+    return api.post(`/runs`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
   },
