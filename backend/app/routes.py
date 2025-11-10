@@ -151,7 +151,7 @@ async def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
         task_result = AsyncResult(run['celery_task_id'])
         if task_result.ready():
             result = task_result.result
-            if result.get("status") == "success":
+            if result and result.get("status") == "success":
                 run = RunStorage.update(run_id, {
                     'status': 'completed',
                     'optimal_clusters': result.get('optimal_clusters'),

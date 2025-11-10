@@ -28,9 +28,6 @@ def update_run_status(run_id: int, updates: dict):
 @celery_app.task(bind=True)
 def train_model(self, run_id: int, model_type: str, dataset_path: str, parameters_path: str, dataset_name: str, folder_path: str):
     try:
-        # Create folder for results
-        os.makedirs(folder_path, exist_ok=True)
-
         # Read duckdb file
         con = duckdb.connect(database=dataset_path) 
         print(f"Connected to DuckDB database at {dataset_path}")
@@ -50,57 +47,70 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
             exclude_cols = config['columns_to_exclude']
         except FileNotFoundError:
             print(f"Error: The file '{config_file_path}' was not found.")
+            raise
         except yaml.YAMLError as exc:
             print(f"Error parsing YAML file: {exc}")
+            raise
         
         # Extract features (assuming all numeric columns except first one which might be ID)        
         results = {}
 
         if model_type == "kmeans":
-            n_iterations = range_params['max-iter']
+            n_iterations = config['hyperparameters']['n_iterations']
+            correlation_threshold = config['hyperparameters']['correlation_threshold']
+            log_transform = config['hyperparameters']['log_transform']
+            subsample_fraction = config['hyperparameters']['subsample_fraction']
+            subsample_data = config['hyperparameters']['subsample_data']
+            manual_k = config['hyperparameters']['manual_k']
+            random_state = config['hyperparameters']['random_state']
             results = run_consensus_pipeline(df, exclude_cols, k_range=range(k_min, k_max+1), 
-                           n_iterations=n_iterations, subsample_fraction=0.8,
-                           correlation_threshold=0.8, log_transform=False,
-                           subsample_data=None, output_dir=folder_path,
-                           manual_k=None, random_state=42)
+                           n_iterations=n_iterations, subsample_fraction=subsample_fraction,
+                           correlation_threshold=correlation_threshold, log_transform=log_transform,
+                           subsample_data=subsample_data, output_dir=folder_path,
+                           manual_k=manual_k, random_state=random_state)
+            print(results)
+            print("Consensus clustering completed.")
         elif model_type == "lca":
-            n_components = range_params['n_components']
-            init_params = range_params['init_params']
-            n_steps = range_params['n_steps']
-            abs_tol = range_params['abs_tol']
-            rel_tol = range_params['rel_tol']
+            n_components = config['hyperparameters']['n_components']
+            init_params = config['hyperparameters']['init_params']
+            n_steps = config['hyperparameters']['n_steps']
+            abs_tol = config['hyperparameters']['abs_tol']
+            rel_tol = config['hyperparameters']['rel_tol']
             # results = train_kmeans_dtw(X, folder_path)
         elif model_type == "k_means_dtw":
-            metric = range_params['metric']
-            max_iter = range_params['max_iter']
-            n_init = range_params['n_init']
-            n_jobs = range_params['n_jobs']
-            random_state = range_params['random_state']
-            perplexity = range_params['perplexity']
-            max_iter_tsne = range_params['max_iter_tsne']
-            init = range_params['init']
+            metric = config['hyperparameters']['metric']
+            max_iter = config['hyperparameters']['max_iter']
+            n_init = config['hyperparameters']['n_init']
+            n_jobs = config['hyperparameters']['n_jobs']
+            random_state = config['hyperparameters']['random_state']
+            perplexity = config['hyperparameters']['perplexity']
+            max_iter_tsne = config['hyperparameters']['max_iter_tsne']
+            init = config['hyperparameters']['init']
             # results = train_lca(X, folder_path)
-        elif model_type == "gbtm":
+        # elif model_type == "gbtm":
 
             # results = train_gbtm(X, folder_path)
             
-            notes_file = os.path.join(folder_path, 'notes_feedback.txt')
-            
-            with open(notes_file, 'w') as f:
-                f.write(f"Model Training Results\n")
-                f.write(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Model Type: {model_type}\n")
-                f.write(f"Optimal Clusters: {results.get('optimal_clusters', 'N/A')}\n")
-                f.write(f"\n{'='*50}\n")
-                f.write(f"NOTES AND FEEDBACK\n")
-                f.write(f"{'='*50}\n\n")
+        notes_file = os.path.join(folder_path, 'notes_feedback.txt')
+        
+        print(f"\nCreating notes file at: {notes_file}")
+        
+        with open(notes_file, 'w') as f:
+            f.write(f"Model Training Results\n")
+            f.write(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Model Type: {model_type}\n")
+            f.write(f"Optimal Clusters: {results.get('optimal_k', 'N/A')}\n")
+            f.write(f"\n{'='*50}\n")
+            f.write(f"NOTES AND FEEDBACK\n")
+            f.write(f"{'='*50}\n\n")
+        
+        print(f"Notes file created successfully at: {notes_file}")
 
-            return {
-                "status": "success",
-                "optimal_clusters": results.get('optimal_clusters'),
-                "folder_path": folder_path
+        return {
+            "status": "success",
+            "optimal_clusters": results.get('optimal_k'),
+            "folder_path": folder_path
         }
-
     
     except Exception as e:
         update_run_status(run_id, {

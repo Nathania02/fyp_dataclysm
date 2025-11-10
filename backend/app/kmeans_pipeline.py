@@ -745,15 +745,15 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     
     # Return results
     results = {
-        'model': model,
-        'df_with_phenotypes': df_with_phenotypes,
+        # 'model': model,
+        # 'df_with_phenotypes': df_with_phenotypes,
         'optimal_k': optimal_k,
-        'labels': model.labels,
-        'X_processed': X_processed,
-        'feature_names': [f for f in feature_names if f not in exclude_cols],
-        'consensus_matrices': model.consensus_matrices,
-        'consensus_scores': model.consensus_scores,
-        'pairwise_consensus': model.pairwise_consensus
+        # 'labels': model.labels,
+        # 'X_processed': X_processed,
+        # 'feature_names': [f for f in feature_names if f not in exclude_cols],
+        # 'consensus_matrices': model.consensus_matrices,
+        # 'consensus_scores': model.consensus_scores,
+        # 'pairwise_consensus': model.pairwise_consensus
     }
     
     print("\n" + "="*80)
@@ -771,6 +771,7 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     print("  - consensus_scores: Dict of consensus scores by k")
     print("  - pairwise_consensus: Dict of pairwise consensus metrics by k")
     
+    print("Results", results)
     return results
 
 

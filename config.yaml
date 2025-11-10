@@ -1,16 +1,21 @@
 range:
   k_min: 2
-  k_max: 4
+  k_max: 3
 
 hyperparameters:
-  max_iter: 100
-  n_init: 10
+  n_iterations: 5
+  correlation_threshold: 0.8
+  log_transform: false
+  subsample_fraction: 0.8
+  subsample_data: 0.01
+  manual_k: null
   random_state: 42
 
 columns_to_exclude:
   - stay_id
-  - respiratory_rate
-
-
-
-
+  - hour
+  - model
+  - all_icd_codes
+  - all_icd_versions
+  - is_sepsis
+  - sofa_total
