@@ -41,6 +41,7 @@ class UserResponse(BaseModel):
 class ModelRunCreate(BaseModel):
     model_type: ModelType
     dataset_name: str
+    dataset_details: str
 
 class ModelRunResponse(BaseModel):
     id: int

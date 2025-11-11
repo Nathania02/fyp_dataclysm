@@ -81,13 +81,15 @@ async def create_run(
     # This will print the string "kmeans"
     print(model_data_obj.model_type.value)
     print(model_data_obj.dataset_name)
+    print(model_data_obj.dataset_details)
     run = RunStorage.create({
         'user_id': current_user['id'],
         'model_type': model_data_obj.model_type.value,
+        'model_details': model_data_obj.dataset_details,
         'dataset_filename': dataset_file.filename,
         'parameters_filename': parameters_file.filename,
     })
-    
+
     # Create folder name: <model>_run<runid>_<datetime>
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     folder_name = f"{model_data_obj.model_type}_run{run['id']}_{timestamp}"
@@ -98,6 +100,19 @@ async def create_run(
     folder_path = results_dir / folder_name
     # Save uploaded file
     os.makedirs(folder_path, exist_ok=True)
+
+    # Create metadata file with model details
+    metadata_file = folder_path / "metadata.txt"
+    with open(metadata_file, 'w') as f:
+        f.write(f"Dataset Metadata\n")
+        f.write(f"{'='*50}\n")
+        f.write(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Dataset Name: {model_data_obj.dataset_name}\n")
+        f.write(f"\n{'='*50}\n")
+        f.write(f"Data Details:\n")
+        f.write(f"{model_data_obj.dataset_details}\n")
+    print(f"Metadata file created at: {metadata_file}")
+    
     # dataset_path = os.path.join(absolute_folder_path, dataset_file.filename)
     abs_dataset_path = (folder_path/dataset_file.filename).resolve()
     print(abs_dataset_path)

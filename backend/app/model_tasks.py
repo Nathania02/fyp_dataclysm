@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import duckdb
 from app.celery_worker import celery_app
-from app.pipeline import run_consensus_pipeline
+from app.kmeans_pipeline import run_consensus_pipeline
 
 
 def update_run_status(run_id: int, updates: dict):

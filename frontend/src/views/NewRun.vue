@@ -31,6 +31,17 @@
         </div>
 
         <div class="form-group">
+          <label for="datasetDetails">Metadata</label>
+          <input type="text"
+                id="datasetDetails" 
+                v-model="datasetDetails" 
+                class="form-control" 
+                placeholder="Enter details of the data"
+                required
+                />
+        </div>
+
+        <div class="form-group">
           <label for="model">Choose Model</label>
           <select id="model" v-model="modelType" class="form-control" required>
             <option value="">Select a model</option>
@@ -71,6 +82,7 @@ import api from '../api'
 const router = useRouter()
 const modelType = ref('')
 const datasetName = ref('')
+const datasetDetails = ref('')
 const datasetFile = ref(null)
 const parameterFile = ref(null)
 const error = ref('')
@@ -84,6 +96,7 @@ const handleDatasetChange = (event) => {
 const handleParamsChange = (event) => {
   parameterFile.value = event.target.files[0]
 }
+
 const handleSubmit = async () => {
   try {
     error.value = ''
@@ -99,6 +112,7 @@ const handleSubmit = async () => {
     const response = await api.createRun(
       modelType.value, 
       datasetName.value, 
+      datasetDetails.value,
       datasetFile.value,
       parameterFile.value
     )
