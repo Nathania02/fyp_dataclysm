@@ -1,4 +1,5 @@
 /backend/venv/
+/backend/app/venv
 /backend/app/__pycache__/
 /.backend/*.pyc 
 /backend/.env
@@ -11,5 +12,4 @@
 /backend/notifications.json
 /backend/runs.json
 /backend/model_runs_results/
-
 .vscode/
