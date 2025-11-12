@@ -7,7 +7,7 @@ warnings.filterwarnings('ignore')
 import duckdb
 from app.celery_worker import celery_app
 from app.kmeans_pipeline import run_consensus_pipeline
-
+from app.lca_pipeline import run_lca_pipeline
 
 def update_run_status(run_id: int, updates: dict):
     """Update run status in JSON file"""
@@ -45,6 +45,9 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
             k_min = range_params['k_min']
             k_max = range_params['k_max']
             exclude_cols = config['columns_to_exclude']
+            n_iterations = config['hyperparameters']['n_iterations']
+            random_state = config['hyperparameters']['random_state']
+
         except FileNotFoundError:
             print(f"Error: The file '{config_file_path}' was not found.")
             raise
@@ -56,13 +59,12 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
         results = {}
 
         if model_type == "kmeans":
-            n_iterations = config['hyperparameters']['n_iterations']
             correlation_threshold = config['hyperparameters']['correlation_threshold']
             log_transform = config['hyperparameters']['log_transform']
             subsample_fraction = config['hyperparameters']['subsample_fraction']
             subsample_data = config['hyperparameters']['subsample_data']
             manual_k = config['hyperparameters']['manual_k']
-            random_state = config['hyperparameters']['random_state']
+
             results = run_consensus_pipeline(df, exclude_cols, k_range=range(k_min, k_max+1), 
                            n_iterations=n_iterations, subsample_fraction=subsample_fraction,
                            correlation_threshold=correlation_threshold, log_transform=log_transform,
@@ -70,19 +72,35 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
                            manual_k=manual_k, random_state=random_state)
             print(results)
             print("Consensus clustering completed.")
+
+
         elif model_type == "lca":
-            n_components = config['hyperparameters']['n_components']
-            init_params = config['hyperparameters']['init_params']
-            n_steps = config['hyperparameters']['n_steps']
-            abs_tol = config['hyperparameters']['abs_tol']
-            rel_tol = config['hyperparameters']['rel_tol']
-            # results = train_kmeans_dtw(X, folder_path)
+            n_init = config['hyperparameters']['n_init']
+            # init_params = config['hyperparameters']['init_params']
+            correlation_threshold = config['hyperparameters']['correlation_threshold']
+            log_transform = config['hyperparameters']['log_transform']
+            subsample_fraction = config['hyperparameters']['subsample_fraction']
+            subsample_data = config['hyperparameters']['subsample_data']
+            manual_k = config['hyperparameters']['manual_k']
+            selection_method = config['hyperparameters']['selection_method']
+
+            # n_steps = config['hyperparameters']['n_steps']
+            # abs_tol = config['hyperparameters']['abs_tol']
+            # rel_tol = config['hyperparameters']['rel_tol']
+
+            results = run_lca_pipeline(df, exclude_cols, k_range=range(k_min, k_max+1),
+                           n_init=n_init, max_iter=n_iterations,
+                           correlation_threshold=correlation_threshold, log_transform=log_transform,
+                           subsample_data=subsample_data, output_dir=folder_path,
+                           manual_k=manual_k, selection_method=selection_method, random_state=random_state)
+            print(results)
+            print("Consensus clustering completed.")
+
         elif model_type == "k_means_dtw":
             metric = config['hyperparameters']['metric']
             max_iter = config['hyperparameters']['max_iter']
             n_init = config['hyperparameters']['n_init']
             n_jobs = config['hyperparameters']['n_jobs']
-            random_state = config['hyperparameters']['random_state']
             perplexity = config['hyperparameters']['perplexity']
             max_iter_tsne = config['hyperparameters']['max_iter_tsne']
             init = config['hyperparameters']['init']
