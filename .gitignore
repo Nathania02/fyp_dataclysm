@@ -13,3 +13,15 @@
 /backend/runs.json
 /backend/model_runs_results/
 .vscode/
+
+# virtual environment
+venv
+/venv/
+/.venv/
+__pycache__/
+*.pyc
+
+# secrets
+.env
+*.env
+secrets.json
