@@ -8,6 +8,7 @@ import NewRun from '../views/NewRun.vue'
 import RunDetails from '../views/RunDetails.vue'
 import Notifications from '../views/Notifications.vue'
 import CompareRuns from '../views/CompareRuns.vue'
+import AboutUs from '../views/AboutUs.vue'
 
 const routes = [
   {
@@ -15,6 +16,12 @@ const routes = [
     name: 'Welcome',
     component: Welcome,
     meta: { requiresAuth: false, hideForAuth: false }
+  },
+  {
+    path: '/about',
+    name: 'AboutUs',
+    component: AboutUs,
+    meta: { requiresAuth: false }
   },
   {
     path: '/login',
@@ -64,6 +71,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 })
+
 
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
