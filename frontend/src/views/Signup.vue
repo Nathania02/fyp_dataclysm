@@ -25,9 +25,22 @@
             type="password"
             class="form-control"
             required
-            minlength="6"
+            minlength="8"
           />
         </div>
+
+        <div class="form-group">
+          <label for="confirmPassword">Confirm Password</label>
+          <input
+            id="confirmPassword"
+            v-model="confirmPassword"
+            type="password"
+            class="form-control"
+            required
+            minlength="8"
+          />
+        </div>
+
         
         <div class="form-group">
           <label for="role">Role</label>
@@ -61,16 +74,39 @@ const authStore = useAuthStore()
 
 const email = ref('')
 const password = ref('')
+const confirmPassword = ref('') // ADDED
 const role = ref('')
 const error = ref('')
 
 const handleSubmit = async () => {
-  try {
-    error.value = ''
-    await authStore.signup(email.value, password.value, role.value)
-    router.push('/')
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Signup failed'
-  }
+// Clear error at the start
+  error.value = ''
+
+  // 1. Check if passwords match
+  if (password.value !== confirmPassword.value) {
+    error.value = 'Passwords do not match.'
+    return // Stop submission
+  }
+
+  // 2. Check for password length
+  if (password.value.length < 8) {
+    error.value = 'Password must be at least 8 characters long.'
+    return // Stop submission
+  }
+  
+  // 3. Check for special characters
+  const specialCharRegex = /[!@#$%^&*(),.?":{}|<>]/
+  if (!specialCharRegex.test(password.value)) {
+    error.value = 'Password must contain at least one special character.'
+    return // Stop submission
+  }
+
+  // If all checks pass, proceed
+  try {
+    await authStore.signup(email.value, password.value, role.value)
+    router.push('/')
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Signup failed'
+  }
 }
 </script>
