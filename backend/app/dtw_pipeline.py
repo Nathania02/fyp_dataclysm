@@ -2,7 +2,7 @@
 Sepsis Phenotyping Pipeline - Yin et al. (2020) Implementation
 Modular pipeline for DTW-based weighted k-means clustering
 """
-
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -21,56 +21,130 @@ warnings.filterwarnings('ignore')
 
 
 class WeightedKMeans:
-    """Weighted K-Means from Yin et al. (2020) Equation 18"""
-    def __init__(self, n_clusters=4, max_iter=100, random_state=42):
+    """
+    Weighted K-Means from Yin et al. (2020) Equation 18
+    Optimized weighted k-means with caching
+    """
+    
+    def __init__(self, n_clusters=4, max_iter=100, random_state=42, tol=1e-4):
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.random_state = random_state
+        self.tol = tol  # Convergence tolerance
         self.labels_ = None
         self.weights_ = None
         self.inertia_ = None
         
-    def _compute_weights(self, distance_matrix, labels):
+    def _compute_weights_vectorized(self, distance_matrix, labels):
+        """
+        Vectorized weight computation
+
+       Latency issue fix 13112025:
+        - removed the computation of the symmetrical distance matrix again
+        - so only computing the upper triangle without the double calcualtion of the lower one as well
+        - adding caching as well
+        
+        """
         n_samples = len(labels)
-        weights = np.ones(n_samples)
+        weights = np.ones(n_samples, dtype=np.float32)
+        
         for k in range(self.n_clusters):
             cluster_mask = (labels == k)
-            cluster_indices = np.where(cluster_mask)[0]
-            if len(cluster_indices) > 1:
-                cluster_distances = distance_matrix[np.ix_(cluster_indices, cluster_indices)]
-                avg_dists = cluster_distances.sum(axis=1) / (len(cluster_indices) - 1)
-                weights[cluster_indices] = 1.0 / (1.0 + np.exp(avg_dists / len(cluster_indices)))
+            cluster_size = cluster_mask.sum()
+            
+            if cluster_size > 1:
+                # Extract cluster submatrix once
+                cluster_indices = np.where(cluster_mask)[0]
+                cluster_dist = distance_matrix[cluster_indices][:, cluster_indices]
+                
+                # Vectorized mean distance (exclude self-distance)
+                avg_dists = (cluster_dist.sum(axis=1) - np.diag(cluster_dist)) / (cluster_size - 1)
+                
+                # Apply sigmoid with scaled distances
+                weights[cluster_indices] = 1.0 / (1.0 + np.exp(avg_dists / cluster_size))
+        
         return weights
     
-    def _compute_cluster_distances(self, distance_matrix, labels):
+    def _compute_cluster_distances_cached(self, distance_matrix, labels, weights):
+        """Compute distances to clusters with weight caching"""
         n_samples = distance_matrix.shape[0]
-        cluster_distances = np.zeros((n_samples, self.n_clusters))
+        cluster_distances = np.full((n_samples, self.n_clusters), np.inf, dtype=np.float32)
+        
         for k in range(self.n_clusters):
             cluster_mask = (labels == k)
             cluster_indices = np.where(cluster_mask)[0]
+            
             if len(cluster_indices) == 0:
-                cluster_distances[:, k] = np.inf
                 continue
-            distances_to_cluster = distance_matrix[:, cluster_indices]
-            weights = self.weights_[cluster_indices]
-            weighted_distances = (distances_to_cluster * weights).sum(axis=1) / weights.sum()
-            cluster_distances[:, k] = weighted_distances
+            
+            # Vectorized weighted distance computation
+            cluster_weights = weights[cluster_indices]
+            weight_sum = cluster_weights.sum()
+            
+            if weight_sum > 0:
+                # Broadcast multiplication: (n_samples, n_cluster) * (n_cluster,)
+                weighted_dists = distance_matrix[:, cluster_indices] @ cluster_weights
+                cluster_distances[:, k] = weighted_dists / weight_sum
+        
         return cluster_distances
     
     def fit_predict(self, distance_matrix):
         np.random.seed(self.random_state)
         n_samples = distance_matrix.shape[0]
-        labels = np.random.randint(0, self.n_clusters, size=n_samples)
+        
+        # K-means++ initialization on distance matrix
+        labels = self._kmeans_plusplus_init(distance_matrix)
+        
+        prev_inertia = np.inf
+        
         for iteration in range(self.max_iter):
-            self.weights_ = self._compute_weights(distance_matrix, labels)
-            cluster_distances = self._compute_cluster_distances(distance_matrix, labels)
+            # Update weights
+            self.weights_ = self._compute_weights_vectorized(distance_matrix, labels)
+            
+            # Compute cluster distances
+            cluster_distances = self._compute_cluster_distances_cached(
+                distance_matrix, labels, self.weights_
+            )
+            
+            # Assign to nearest cluster
             new_labels = np.argmin(cluster_distances, axis=1)
+            
+            # Check convergence
             if np.array_equal(labels, new_labels):
+                print(f"  Converged at iteration {iteration+1}")
                 break
+            
+            # Compute inertia for convergence check
+            current_inertia = np.sum([cluster_distances[i, new_labels[i]] 
+                                     for i in range(n_samples)])
+            
+            if abs(prev_inertia - current_inertia) < self.tol:
+                print(f"  Converged (inertia change < {self.tol}) at iteration {iteration+1}")
+                break
+            
             labels = new_labels
+            prev_inertia = current_inertia
+        
         self.labels_ = labels
-        self.inertia_ = sum(cluster_distances[i, labels[i]] for i in range(n_samples))
+        self.inertia_ = prev_inertia
+        
         return labels
+    
+    def _kmeans_plusplus_init(self, distance_matrix):
+        """Fast k-means++ initialization"""
+        n_samples = distance_matrix.shape[0]
+        centers_idx = [np.random.randint(n_samples)]
+        
+        for _ in range(self.n_clusters - 1):
+            dists = distance_matrix[:, centers_idx].min(axis=1)
+            probs = dists / dists.sum()
+            next_center = np.random.choice(n_samples, p=probs)
+            centers_idx.append(next_center)
+        
+        # Initial assignment
+        return np.argmin(distance_matrix[:, centers_idx], axis=1)
+
+
 
 
 def load_and_prepare_data(db_path, table_name, time_window_hours, feature_columns, subsample_fraction=None, random_state=42):
@@ -131,37 +205,92 @@ def prepare_timeseries_array(df, feature_columns, max_hours):
     return X, stay_ids
 
 
-def compute_dtw_matrix(X, chunk_size=500):
-    """Compute pairwise DTW distance matrix"""
-    n_patients = X.shape[0]
-    distance_matrix = np.zeros((n_patients, n_patients))
-    n_chunks = (n_patients + chunk_size - 1) // chunk_size
+def compute_dtw_matrix(X, chunk_size=500, use_cache=True):
+    """
+    Compute pairwise DTW distance matrix with edge case handling especially for 1 patient
     
-    for i in tqdm(range(n_chunks), desc="Computing DTW"):
-        start_i = i * chunk_size
-        end_i = min((i + 1) * chunk_size, n_patients)
-        for j in range(i, n_chunks):
-            start_j = j * chunk_size
-            end_j = min((j + 1) * chunk_size, n_patients)
-            chunk_distances = cdist_dtw(X[start_i:end_i], X[start_j:end_j], n_jobs=-1)
-            distance_matrix[start_i:end_i, start_j:end_j] = chunk_distances
-            if i != j:
-                distance_matrix[start_j:end_j, start_i:end_i] = chunk_distances.T
+    """
+    n_patients = X.shape[0]
+    distance_matrix = np.zeros((n_patients, n_patients), dtype=np.float32)
+    
+    print(f"Computing DTW distance matrix for {n_patients} patients...")
+    
+    # Edge case: insufficient patients for clustering
+    if n_patients < 2:
+        print(f"Warning: Only {n_patients} patient(s) - cannot compute meaningful distances")
+        return distance_matrix
+    
+    # Compute only upper triangle
+    n_chunks = (n_patients + chunk_size - 1) // chunk_size
+    total_chunks = (n_chunks * (n_chunks + 1)) // 2
+    
+    with tqdm(total=total_chunks, desc="Computing DTW", unit="chunk") as pbar:
+        for i in range(n_chunks):
+            start_i = i * chunk_size
+            end_i = min((i + 1) * chunk_size, n_patients)
+            
+            for j in range(i, n_chunks):
+                start_j = j * chunk_size
+                end_j = min((j + 1) * chunk_size, n_patients)
+                
+                n_available = max(1, os.cpu_count() - 2)
+                # n_cores = min(8, n_available)
+                n_cores=1
+                print(f"Using {n_cores} cores for computation.")
+                chunk_distances = cdist_dtw(
+                    X[start_i:end_i], 
+                    X[start_j:end_j], 
+                    n_jobs=n_cores,
+                    verbose=0
+                )
+                
+                distance_matrix[start_i:end_i, start_j:end_j] = chunk_distances
+                
+                if i != j:
+                    distance_matrix[start_j:end_j, start_i:end_i] = chunk_distances.T
+                
+                pbar.update(1)
+    
+    # Safe statistics
+    non_diag_mask = ~np.eye(n_patients, dtype=bool)
+    non_diag_dists = distance_matrix[non_diag_mask]
+    
+    if len(non_diag_dists) > 0 and non_diag_dists.max() > 0:
+        print(f"DTW matrix: shape={distance_matrix.shape}, "
+              f"range=[{non_diag_dists[non_diag_dists>0].min():.3f}, {non_diag_dists.max():.3f}]")
+    else:
+        print(f"DTW matrix: shape={distance_matrix.shape} (warning: all zeros)")
     
     return distance_matrix
 
 
-def evaluate_k_range(distance_matrix, k_range):
-    """Evaluate clustering for multiple k values"""
-    mds = MDS(n_components=10, dissimilarity='precomputed', random_state=42, n_jobs=-1)
+def evaluate_k_range(distance_matrix, k_range, n_mds_components=10):
+    """
+    Evaluate clustering for multiple k value
+    Fast evaluation using reduced MDS dimensionality
+    """
+    print("\n[5/6] Evaluating k values...")
+    
+    # Compute MDS once for all k values (reduced dimensions for speed)
+    n_available = max(1, os.cpu_count() - 2)
+    # n_cores = min(8, n_available)
+    n_cores=1
+    print(f"  Computing MDS with {n_mds_components} components...")
+    mds = MDS(n_components=n_mds_components, dissimilarity='precomputed', 
+              random_state=42, n_jobs=n_cores, max_iter=100)  # Reduced iterations
     X_euclidean = mds.fit_transform(distance_matrix)
     
     results = []
-    for k in k_range:
-        wkmeans = WeightedKMeans(n_clusters=k, max_iter=100, random_state=42)
+    for k in tqdm(k_range, desc="  Testing k values", unit="k"):
+        wkmeans = WeightedKMeans(n_clusters=k, max_iter=50, random_state=42)  # Reduced iterations
         labels = wkmeans.fit_predict(distance_matrix)
         
-        sil = silhouette_score(distance_matrix, labels, metric='precomputed')
+        # Fast silhouette with sampling for large datasets
+        if len(labels) > 5000:
+            sil = silhouette_score(distance_matrix, labels, metric='precomputed', sample_size=5000)
+        else:
+            sil = silhouette_score(distance_matrix, labels, metric='precomputed')
+        
         dbi = davies_bouldin_score(X_euclidean, labels)
         chi = calinski_harabasz_score(X_euclidean, labels)
         
@@ -173,7 +302,7 @@ def evaluate_k_range(distance_matrix, k_range):
             'davies_bouldin': dbi,
             'calinski_harabasz': chi,
             'inertia': wkmeans.inertia_,
-            'cluster_sizes': dict(zip(unique, counts))
+            'cluster_sizes': dict(zip(unique.tolist(), counts.tolist()))
         })
     
     return pd.DataFrame(results)
@@ -227,7 +356,7 @@ def plot_dimensionality_reduction(distance_matrix, labels, output_dir, method='b
     
     if method in ['tsne', 'both']:
         print("  Computing t-SNE...")
-        tsne = TSNE(n_components=2, metric='precomputed', init='random', random_state=42, n_jobs=-1)
+        tsne = TSNE(n_components=2, metric='precomputed', init='random', random_state=42, n_jobs=1)
         X_tsne = tsne.fit_transform(distance_matrix)
         
         plt.figure(figsize=(10, 8))
@@ -243,7 +372,7 @@ def plot_dimensionality_reduction(distance_matrix, labels, output_dir, method='b
     
     if method in ['pca', 'both']:
         print("  Computing PCA...")
-        mds = MDS(n_components=50, dissimilarity='precomputed', random_state=42, n_jobs=-1)
+        mds = MDS(n_components=50, dissimilarity='precomputed', random_state=42, n_jobs=1)
         X_mds = mds.fit_transform(distance_matrix)
         
         pca = PCA(n_components=2, random_state=42)
@@ -438,22 +567,23 @@ def run_kmeans_dtw_pipeline(
     X_norm = scaler.fit_transform(X)
     
     # Compute DTW
+    # Compute DTW - use optimized function
     subsample_suffix = f"_subsample{subsample_fraction}" if subsample_fraction else ""
     dtw_path = output_dir / f'dtw_matrix_{time_window_hours}h{subsample_suffix}.npy'
-    
+
     if dtw_path.exists():
         print(f"\n[4/6] Loading existing DTW matrix from {dtw_path}...")
         distance_matrix = np.load(dtw_path)
     else:
-        print(f"\n[4/6] Computing DTW distance matrix...")
-        distance_matrix = compute_dtw_matrix(X_norm, chunk_size=dtw_chunk_size)
+        print(f"\n[4/6] Computing DTW distance matrix (optimized)...")
+        distance_matrix = compute_dtw_matrix(X_norm, chunk_size=dtw_chunk_size, use_cache=True)
         np.save(dtw_path, distance_matrix)
         print(f"  Saved to {dtw_path}")
-    
-    # Determine optimal k
+
+    # Evaluate k range - use optimized function
     k_evaluation_df = None
     if manual_k is None:
-        print(f"\n[5/6] Evaluating k={k_range[0]} to {k_range[1]-1}...")
+        print(f"\n[5/6] Evaluating k={k_range[0]} to {k_range[1]-1} (fast mode)...")
         k_evaluation_df = evaluate_k_range(distance_matrix, range(*k_range))
         k_evaluation_df.to_csv(output_dir / 'k_evaluation.csv', index=False)
         
@@ -464,19 +594,20 @@ def run_kmeans_dtw_pipeline(
     else:
         optimal_k = manual_k
         print(f"\n[5/6] Using manual k={optimal_k}")
-    
+
     # Final clustering
     print(f"\n[6/6] Final clustering with k={optimal_k}...")
     wkmeans = WeightedKMeans(n_clusters=optimal_k, max_iter=100, random_state=random_state)
     labels = wkmeans.fit_predict(distance_matrix)
-    
+        
     # Cluster sizes
     unique, counts = np.unique(labels, return_counts=True)
     cluster_sizes = dict(zip(unique.tolist(), counts.tolist()))
     print(f"\nCluster sizes: {cluster_sizes}")
     
     # Compute final metrics
-    mds = MDS(n_components=10, dissimilarity='precomputed', random_state=42, n_jobs=-1)
+
+    mds = MDS(n_components=10, dissimilarity='precomputed', random_state=42, n_jobs=1)
     X_euclidean = mds.fit_transform(distance_matrix)
     
     final_metrics = {

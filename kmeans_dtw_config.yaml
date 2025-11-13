@@ -4,12 +4,12 @@ range:
 
 hyperparameters:
   n_init: 10
-  subsample_fraction: 0.0002
+  subsample_fraction: 0.02
   time_window_hours: 24
   manual_k: null
   feature_columns: 
   random_state: 42
-  dtw_chunk_size: 500
+  dtw_chunk_size: 100
 
 columns_to_exclude:
   - stay_id
