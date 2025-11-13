@@ -346,7 +346,7 @@ def analyze_clinical_outcomes(db_path, table_name, stay_ids, labels, output_dir)
     return results_df
 
 
-def run_sepsis_phenotyping_pipeline(
+def run_kmeans_dtw_pipeline(
     db_path,
     table_name="clipped_brits_saits",
     time_window_hours=24,
@@ -529,7 +529,7 @@ def run_sepsis_phenotyping_pipeline(
 
 
 if __name__ == "__main__":
-    results = run_sepsis_phenotyping_pipeline(
+    results = run_kmeans_dtw_pipeline(
         db_path="fixed_hour_length_issue_BRITSSAITS_10112025.duckdb", # using the fixed dataset
         time_window_hours=24, # by default the time frame will be 24, but can change
         output_dir="output_24h_full", # results
