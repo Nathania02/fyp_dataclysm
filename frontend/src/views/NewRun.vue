@@ -90,8 +90,25 @@ const error = ref('')
 const success = ref('')
 const submitting = ref(false)
 
+const MAX_FILENAME_LENGTH = 40
+
 const handleDatasetChange = (event) => {
   datasetFile.value = event.target.files[0]
+  const file = event.target.files[0]
+  if (!file) {
+    datasetFile.value = null
+    return
+  }
+
+  if (file.name.length > MAX_FILENAME_LENGTH) {
+    error.value = `Filename is too long. Maximum ${MAX_FILENAME_LENGTH} characters allowed.`
+    datasetFile.value = null // Clear the invalid file reference
+    event.target.value = null // Reset the file input field
+  } else {
+    // File is valid
+    error.value = '' // Clear any previous errors
+    datasetFile.value = file
+  }
 }
 
 const handleParamsChange = (event) => {
