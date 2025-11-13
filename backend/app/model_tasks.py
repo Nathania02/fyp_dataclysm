@@ -8,6 +8,8 @@ import duckdb
 from app.celery_worker import celery_app
 from app.kmeans_pipeline import run_consensus_pipeline
 from app.lca_pipeline import run_lca_pipeline
+from app.dtw_pipeline import run_kmeans_dtw_pipeline
+from app.gbtm_pipeline import run_gbtm_pipeline
 
 def update_run_status(run_id: int, updates: dict):
     """Update run status in JSON file"""
@@ -28,14 +30,6 @@ def update_run_status(run_id: int, updates: dict):
 @celery_app.task(bind=True)
 def train_model(self, run_id: int, model_type: str, dataset_path: str, parameters_path: str, dataset_name: str, folder_path: str):
     try:
-        # Read duckdb file
-        con = duckdb.connect(database=dataset_path) 
-        print(f"Connected to DuckDB database at {dataset_path}")
-        print(dataset_name)
-        con.sql("SHOW TABLES;").show()
-        # Load dataset
-        df = con.sql(f"SELECT * FROM {dataset_name}").fetchdf()
-
         # Read parameters file to get parameters
         config_file_path = parameters_path
         try:
@@ -45,7 +39,6 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
             k_min = range_params['k_min']
             k_max = range_params['k_max']
             exclude_cols = config['columns_to_exclude']
-            n_iterations = config['hyperparameters']['n_iterations']
             random_state = config['hyperparameters']['random_state']
 
         except FileNotFoundError:
@@ -59,6 +52,11 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
         results = {}
 
         if model_type == "kmeans":
+            # Read and load duckdb file
+            con = duckdb.connect(database=dataset_path) 
+            df = con.sql(f"SELECT * FROM {dataset_name}").fetchdf()
+
+            n_iterations = config['hyperparameters']['n_iterations']
             correlation_threshold = config['hyperparameters']['correlation_threshold']
             log_transform = config['hyperparameters']['log_transform']
             subsample_fraction = config['hyperparameters']['subsample_fraction']
@@ -75,7 +73,13 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
 
 
         elif model_type == "lca":
+
+            # Read and load duckdb file
+            con = duckdb.connect(database=dataset_path) 
+            df = con.sql(f"SELECT * FROM {dataset_name}").fetchdf()
+
             n_init = config['hyperparameters']['n_init']
+            n_iterations = config['hyperparameters']['n_iterations']
             # init_params = config['hyperparameters']['init_params']
             correlation_threshold = config['hyperparameters']['correlation_threshold']
             log_transform = config['hyperparameters']['log_transform']
@@ -96,19 +100,37 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
             print(results)
             print("Consensus clustering completed.")
 
-        elif model_type == "k_means_dtw":
-            metric = config['hyperparameters']['metric']
-            max_iter = config['hyperparameters']['max_iter']
+        elif model_type == "kmeans_dtw":
             n_init = config['hyperparameters']['n_init']
-            n_jobs = config['hyperparameters']['n_jobs']
-            perplexity = config['hyperparameters']['perplexity']
-            max_iter_tsne = config['hyperparameters']['max_iter_tsne']
-            init = config['hyperparameters']['init']
-            # results = train_lca(X, folder_path)
-        # elif model_type == "gbtm":
+            time_window_hours = config['hyperparameters']['time_window_hours']
+            dtw_chunk_size = config['hyperparameters']['dtw_chunk_size']
+            manual_k = config['hyperparameters']['manual_k']
+            subsample_fraction = config['hyperparameters']['subsample_fraction']
+            feature_columns = config['hyperparameters']['feature_columns']
 
-            # results = train_gbtm(X, folder_path)
+            results = run_kmeans_dtw_pipeline(dataset_path, table_name=dataset_name, time_window_hours=time_window_hours, 
+                                               output_dir=folder_path, manual_k=manual_k, k_range=range(k_min, k_max+1),
+                                               feature_columns=feature_columns,dtw_chunk_size=dtw_chunk_size, subsample_fraction=subsample_fraction, 
+                                              random_state=random_state)
+
+            print(results)
+            print("DTW K-Means clustering completed.")
+
+        elif model_type == "gbtm":
             
+            # Read and load duckdb file
+            con = duckdb.connect(database=dataset_path) 
+            df = con.sql(f"SELECT * FROM {dataset_name}").fetchdf()
+
+            n_init = config['hyperparameters']['n_init']
+            n_iterations = config['hyperparameters']['n_iterations']
+            results = run_gbtm_pipeline(df, exclude_cols, db_name=dataset_name, k_range=range(k_min, k_max+1),
+                                        n_init=n_init, max_iter=n_iterations,random_state=random_state,
+                                        output_dir=folder_path)
+
+            print(results)
+            print("GBTM clustering completed.")
+
         notes_file = os.path.join(folder_path, 'notes_feedback.txt')
         
         print(f"\nCreating notes file at: {notes_file}")

@@ -1,0 +1,22 @@
+range:
+  k_min: 2
+  k_max: 3
+
+hyperparameters:
+  n_init: 10
+  subsample_fraction: 0.0002
+  time_window_hours: 24
+  manual_k: null
+  feature_columns: 
+  random_state: 42
+  dtw_chunk_size: 500
+
+columns_to_exclude:
+  - stay_id
+  - hour
+  - model
+  - all_icd_codes
+  - all_icd_versions
+  - is_sepsis
+  - sofa_total
+  - age_at_admission
