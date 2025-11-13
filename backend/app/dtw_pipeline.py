@@ -2,7 +2,7 @@
 Sepsis Phenotyping Pipeline - Yin et al. (2020) Implementation
 Modular pipeline for DTW-based weighted k-means clustering
 """
-
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -233,10 +233,14 @@ def compute_dtw_matrix(X, chunk_size=500, use_cache=True):
                 start_j = j * chunk_size
                 end_j = min((j + 1) * chunk_size, n_patients)
                 
+                n_available = max(1, os.cpu_count() - 2)
+                # n_cores = min(8, n_available)
+                n_cores=1
+                print(f"Using {n_cores} cores for computation.")
                 chunk_distances = cdist_dtw(
                     X[start_i:end_i], 
                     X[start_j:end_j], 
-                    n_jobs=-1,
+                    n_jobs=n_cores,
                     verbose=0
                 )
                 
@@ -268,9 +272,12 @@ def evaluate_k_range(distance_matrix, k_range, n_mds_components=10):
     print("\n[5/6] Evaluating k values...")
     
     # Compute MDS once for all k values (reduced dimensions for speed)
+    n_available = max(1, os.cpu_count() - 2)
+    # n_cores = min(8, n_available)
+    n_cores=1
     print(f"  Computing MDS with {n_mds_components} components...")
     mds = MDS(n_components=n_mds_components, dissimilarity='precomputed', 
-              random_state=42, n_jobs=-1, max_iter=100)  # Reduced iterations
+              random_state=42, n_jobs=n_cores, max_iter=100)  # Reduced iterations
     X_euclidean = mds.fit_transform(distance_matrix)
     
     results = []
@@ -349,7 +356,7 @@ def plot_dimensionality_reduction(distance_matrix, labels, output_dir, method='b
     
     if method in ['tsne', 'both']:
         print("  Computing t-SNE...")
-        tsne = TSNE(n_components=2, metric='precomputed', init='random', random_state=42, n_jobs=-1)
+        tsne = TSNE(n_components=2, metric='precomputed', init='random', random_state=42, n_jobs=1)
         X_tsne = tsne.fit_transform(distance_matrix)
         
         plt.figure(figsize=(10, 8))
@@ -365,7 +372,7 @@ def plot_dimensionality_reduction(distance_matrix, labels, output_dir, method='b
     
     if method in ['pca', 'both']:
         print("  Computing PCA...")
-        mds = MDS(n_components=50, dissimilarity='precomputed', random_state=42, n_jobs=-1)
+        mds = MDS(n_components=50, dissimilarity='precomputed', random_state=42, n_jobs=1)
         X_mds = mds.fit_transform(distance_matrix)
         
         pca = PCA(n_components=2, random_state=42)
@@ -599,7 +606,8 @@ def run_kmeans_dtw_pipeline(
     print(f"\nCluster sizes: {cluster_sizes}")
     
     # Compute final metrics
-    mds = MDS(n_components=10, dissimilarity='precomputed', random_state=42, n_jobs=-1)
+
+    mds = MDS(n_components=10, dissimilarity='precomputed', random_state=42, n_jobs=1)
     X_euclidean = mds.fit_transform(distance_matrix)
     
     final_metrics = {
