@@ -1,0 +1,23 @@
+range:
+  k_min: 2
+  k_max: 3
+
+hyperparameters:
+  n_iterations: 5
+  n_init: 10
+  correlation_threshold: 0.8
+  log_transform: false
+  subsample_fraction: 0.8
+  subsample_data: 0.01
+  manual_k: null
+  random_state: 42
+
+columns_to_exclude:
+  - stay_id
+  - hour
+  - model
+  - all_icd_codes
+  - all_icd_versions
+  - is_sepsis
+  - sofa_total
+  - age_at_admission

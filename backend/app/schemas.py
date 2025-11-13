@@ -11,6 +11,7 @@ class ModelType(str, Enum):
     KMEANS = "kmeans"
     KMEANS_DTW = "kmeans_dtw"
     LCA = "lca"
+    GBTM = "gbtm"
 
 class RunStatus(str, Enum):
     PENDING = "pending"

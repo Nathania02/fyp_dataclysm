@@ -48,6 +48,7 @@
             <option value="kmeans">K-Means</option>
             <option value="kmeans_dtw">K-Means with DTW for Temporal</option>
             <option value="lca">Latent Class Analysis (LCA)</option>
+            <option value="gbtm">Group-based Trajectory Modelling (GBTM)</option>
           </select>
         </div>
 

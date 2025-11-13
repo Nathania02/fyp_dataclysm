@@ -4,14 +4,13 @@ range:
 
 hyperparameters:
   n_iterations: 5
-  n_init: 10
-  correlation_threshold: 0.8
-  log_transform: false
-  subsample_fraction: 0.8
-  subsample_data: 0.01
-  manual_k: null
+  n_init: 5
+  # correlation_threshold: 0.8
+  # log_transform: false
+  # subsample_fraction: 0.8
+  # subsample_data: 0.01
+  # manual_k: null
   random_state: 42
-  selection_method: "composite"
 
 columns_to_exclude:
   - stay_id
@@ -22,3 +21,4 @@ columns_to_exclude:
   - is_sepsis
   - sofa_total
   - age_at_admission
+  - sofa_cat

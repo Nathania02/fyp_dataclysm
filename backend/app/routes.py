@@ -85,7 +85,8 @@ async def create_run(
     run = RunStorage.create({
         'user_id': current_user['id'],
         'model_type': model_data_obj.model_type.value,
-        'model_details': model_data_obj.dataset_details,
+        'dataset_name': model_data_obj.dataset_name,
+        'dataset_details': model_data_obj.dataset_details,
         'dataset_filename': dataset_file.filename,
         'parameters_filename': parameters_file.filename,
     })
