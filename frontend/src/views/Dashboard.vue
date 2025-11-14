@@ -26,23 +26,73 @@
         </router-link>
       </div>
     </div>
+
+    <!-- Filters Section -->
+    <div class="filters-section card" style="margin-bottom: 1.5rem;">
+      <div class="filters-grid">
+        <div class="filter-group">
+          <label>Model Type</label>
+          <select v-model="filters.modelType" class="form-control">
+            <option value="">All Models</option>
+            <option value="kmeans">K-Means</option>
+            <option value="kmeans_dtw">K-Means with DTW</option>
+            <option value="lca">Latent Class Analysis</option>
+            <option value="gbtm">GBTM</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Dataset</label>
+          <input 
+            v-model="filters.dataset" 
+            type="text" 
+            placeholder="Filter by dataset name"
+            class="form-control"
+          />
+        </div>
+
+        <div class="filter-group">
+          <label>Created Date</label>
+          <input 
+            v-model="filters.createdDate" 
+            type="date" 
+            class="form-control"
+          />
+        </div>
+
+        <div class="filter-group">
+          <label>Completed Date</label>
+          <input 
+            v-model="filters.completedDate" 
+            type="date" 
+            class="form-control"
+          />
+        </div>
+
+        <div class="filter-group" style="display: flex; align-items: end;">
+          <button @click="clearFilters" class="btn btn-secondary" style="width: 100%;">
+            Clear Filters
+          </button>
+        </div>
+      </div>
+    </div>
     
     <div v-if="loading" class="loading">
       <div class="spinner"></div>
     </div>
     
-    <div v-else-if="runs.length === 0" class="card">
+    <div v-else-if="filteredRuns.length === 0" class="card">
       <p style="text-align: center; color: #7f8c8d;">
-        No model runs yet. 
-        <router-link to="/new-run">
-          Start your first run
-        </router-link>
+        No model runs found matching your filters.
+        <button @click="clearFilters" class="btn btn-secondary" style="margin-left: 1rem;">
+          Clear Filters
+        </button>
       </p>
     </div>
     
     <div v-else class="card-grid">
       <div 
-        v-for="run in runs" 
+        v-for="run in filteredRuns" 
         :key="run.id" 
         class="card"
         :class="{ 'card-selected': selectedRuns.includes(run.id) }"
@@ -66,6 +116,7 @@
         <div style="color: #7f8c8d; font-size: 0.9rem;">
           <p><strong>Model:</strong> {{ formatModelType(run.model_type) }}</p>
           <p><strong>Dataset:</strong> {{ run.dataset_filename }}</p>
+          <p><strong>Created by:</strong> {{ getUserName(run.user_email) }}</p>
           <p v-if="run.optimal_clusters"><strong>Optimal Clusters:</strong> {{ run.optimal_clusters }}</p>
           <p><strong>Created:</strong> {{ formatDate(run.created_at) }}</p>
           <p v-if="run.completed_at"><strong>Completed:</strong> {{ formatDate(run.completed_at) }}</p>
@@ -85,7 +136,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
@@ -96,6 +147,61 @@ const runs = ref([])
 const loading = ref(true)
 const selectMode = ref(false)
 const selectedRuns = ref([])
+const filters = ref({
+  modelType: '',
+  dataset: '',
+  createdDate: '',
+  completedDate: ''
+})
+
+const filteredRuns = computed(() => {
+  let result = runs.value
+
+  // Filter by model type
+  if (filters.value.modelType) {
+    result = result.filter(run => run.model_type === filters.value.modelType)
+  }
+
+  // Filter by dataset name
+  if (filters.value.dataset) {
+    result = result.filter(run => 
+      run.dataset_filename.toLowerCase().includes(filters.value.dataset.toLowerCase())
+    )
+  }
+
+  // Filter by created date
+  if (filters.value.createdDate) {
+    result = result.filter(run => {
+      const runDate = new Date(run.created_at).toISOString().split('T')[0]
+      return runDate === filters.value.createdDate
+    })
+  }
+
+  // Filter by completed date
+  if (filters.value.completedDate) {
+    result = result.filter(run => {
+      if (!run.completed_at) return false
+      const runDate = new Date(run.completed_at).toISOString().split('T')[0]
+      return runDate === filters.value.completedDate
+    })
+  }
+
+  return result
+})
+
+const clearFilters = () => {
+  filters.value = {
+    modelType: '',
+    dataset: '',
+    createdDate: '',
+    completedDate: ''
+  }
+}
+
+const getUserName = (email) => {
+  if (!email) return 'Unknown'
+  return email.split('@')[0]
+}
 
 const fetchRuns = async () => {
   try {
@@ -149,7 +255,8 @@ const formatModelType = (type) => {
   const types = {
     'kmeans': 'K-Means',
     'kmeans_dtw': 'K-Means with DTW',
-    'lca': 'Latent Class Analysis'
+    'lca': 'Latent Class Analysis',
+    'gbtm': 'GBTM'
   }
   return types[type] || type
 }
@@ -182,5 +289,23 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   cursor: pointer;
+}
+
+.filters-section {
+  padding: 1.5rem;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.filter-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #34495e;
+  font-size: 0.9rem;
 }
 </style>

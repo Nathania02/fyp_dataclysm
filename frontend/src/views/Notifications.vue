@@ -1,5 +1,8 @@
 <template>
   <div class="container">
+    <div style="margin-bottom: 2rem;">
+      <router-link to="/" class="btn btn-secondary">← Back to Dashboard</router-link>
+    </div>
     <h2 style="margin-bottom: 2rem;">Notifications</h2>
     
     <div v-if="loading" class="loading">

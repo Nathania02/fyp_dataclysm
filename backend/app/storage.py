@@ -81,6 +81,7 @@ class RunStorage:
         run = {
             'id': new_id,
             'user_id': run_data['user_id'],
+            'user_email': run_data.get('user_email', 'unknown@email.com'), 
             'model_type': run_data['model_type'],
             'status': 'pending',
             'folder_path': None,

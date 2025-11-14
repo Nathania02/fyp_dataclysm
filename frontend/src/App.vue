@@ -32,7 +32,7 @@ const unreadCount = ref(0)
 
 const handleLogout = async () => {
   await authStore.logout()
-  router.push('/login')
+  router.push('/welcome')
 }
 
 const fetchNotifications = async () => {

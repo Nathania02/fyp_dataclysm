@@ -47,6 +47,7 @@ class ModelRunCreate(BaseModel):
 class ModelRunResponse(BaseModel):
     id: int
     user_id: int
+    user_email: Optional[str] = None 
     model_type: str
     status: str
     folder_path: Optional[str]
