@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import Welcome from '../views/Welcome.vue'
-import Login from '../views/Login.vue'
-import Signup from '../views/Signup.vue'
+// import Login from '../views/Login.vue'
+// import Signup from '../views/Signup.vue'
 import Dashboard from '../views/Dashboard.vue'
 import NewRun from '../views/NewRun.vue'
 import RunDetails from '../views/RunDetails.vue'
 import Notifications from '../views/Notifications.vue'
 import CompareRuns from '../views/CompareRuns.vue'
 import AboutUs from '../views/AboutUs.vue'
+import Auth from '../views/Auth.vue'
 
 const routes = [
   {
@@ -26,13 +27,13 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login,
+    component: Auth,
     meta: { requiresAuth: false, hideForAuth: true }
   },
   {
     path: '/signup',
     name: 'Signup',
-    component: Signup,
+    component: Auth,
     meta: { requiresAuth: false, hideForAuth: true }
   },
   {
