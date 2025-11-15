@@ -15,6 +15,7 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from pathlib import Path
 from tqdm import tqdm
 import warnings
+# from email
 warnings.filterwarnings('ignore')
 
 class ConsensusKMeans:
@@ -691,6 +692,13 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     print(f"folder path / output dir: {output_dir}")
     print(f"Input data: {df.shape[0]:,} rows, {df.shape[1]} columns")
     
+    # Override k_range if manual_k is specified
+    if manual_k is not None:
+        k_range = [manual_k]
+        print(f"\nManual k specified: Running only k={manual_k}")
+    else:
+        print(f"\nTesting k range: {list(k_range)}")
+    
     # Subsample data if requested
     if subsample_data is not None:
         print(f"\nSubsampling {subsample_data*100:.1f}% of data...")
@@ -719,8 +727,9 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     # Compute metrics
     model.compute_consensus_metrics()
     
-    # Print selection criteria
-    model.print_selection_criteria()
+    # Print selection criteria (only if testing multiple k values)
+    if manual_k is None:
+        model.print_selection_criteria()
     
     # Select optimal k
     optimal_k = model.select_optimal_k(
@@ -799,7 +808,7 @@ if __name__ == "__main__":
         subsample_fraction=0.8,
         subsample_data=0.02,  # Use 2% of data
         output_dir='testing',
-        manual_k=None,
+        manual_k=4,
         random_state=42
     )
     
