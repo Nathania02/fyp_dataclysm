@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """
 Group-Based Trajectory Modeling (GBTM) Pipeline
-Using Gaussian Mixture Models with 6-metric composite scoring
+Using Gaussian Mixture Models with RANK-BASED composite scoring
 Based on TAME notebook methodology for phenotype discovery
 
-This implementation matches the notebooks:
+KEY METHODOLOGY:
+- 6 metrics computed: BIC, AIC, Inertia, Silhouette, Davies-Bouldin, Calinski-Harabasz
+- Each metric is RANKED (1 = best) across all k values
+- Composite score = AVERAGE of the 6 ranks (lower = better)
+- This rank-based approach balances all metrics equally
+
+Expected results:
 - consensus_clustering_results_updated.duckdb (≤24h) → k=4
 - fixed_hour_length_issue.duckdb (≤24h) → k=5
 """
@@ -27,13 +33,16 @@ warnings.filterwarnings('ignore')
 class GroupBasedTrajectoryModel:
     """
     Group-Based Trajectory Modeling using Gaussian Mixture Models
-    with 6-metric composite scoring:
-    - BIC (lower is better)
-    - AIC (lower is better)
-    - Inertia (lower is better)
-    - Silhouette (higher is better)
-    - Davies-Bouldin (lower is better)
-    - Calinski-Harabasz (higher is better)
+    with RANK-BASED composite scoring across 6 metrics:
+    - BIC (lower is better) → ranked
+    - AIC (lower is better) → ranked
+    - Inertia (lower is better) → ranked
+    - Silhouette (higher is better) → ranked (reversed)
+    - Davies-Bouldin (lower is better) → ranked
+    - Calinski-Harabasz (higher is better) → ranked (reversed)
+    
+    Composite score = average of 6 ranks (lower = better)
+    This ensures all metrics contribute equally to selection.
     """
     
     def __init__(self, k_range=range(2, 7), n_init=10, max_iter=200, random_state=42):
@@ -218,8 +227,9 @@ class GroupBasedTrajectoryModel:
     
     def compute_composite_scores(self):
         """
-        Compute composite scores using MinMaxScaler normalization.
-        Average of all 6 normalized metrics (lower composite = better).
+        Compute composite scores using RANK-BASED averaging (notebook methodology).
+        Average of all 6 metric ranks (lower composite rank = better).
+        This matches the TAME notebook approach where k=4 is selected.
         """
         print("\n" + "="*80)
         print("COMPUTING COMPOSITE SCORES")
@@ -227,38 +237,42 @@ class GroupBasedTrajectoryModel:
         
         k_values = sorted(self.bic_scores.keys())
         
-        # Extract values
-        bic_values = np.array([self.bic_scores[k] for k in k_values]).reshape(-1, 1)
-        aic_values = np.array([self.aic_scores[k] for k in k_values]).reshape(-1, 1)
-        inertia_values = np.array([self.inertia_scores[k] for k in k_values]).reshape(-1, 1)
-        sil_values = np.array([self.silhouette_scores[k] for k in k_values]).reshape(-1, 1)
-        db_values = np.array([self.davies_bouldin_scores[k] for k in k_values]).reshape(-1, 1)
-        ch_values = np.array([self.calinski_harabasz_scores[k] for k in k_values]).reshape(-1, 1)
+        # Compute ranks for each metric (1 = best)
+        # For metrics where LOWER is better: BIC, AIC, Inertia, Davies-Bouldin
+        bic_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.bic_scores[x]))}
+        aic_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.aic_scores[x]))}
+        inertia_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.inertia_scores[x]))}
+        db_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.davies_bouldin_scores[x]))}
         
-        # Normalize using MinMaxScaler (0=best, 1=worst)
-        scaler = MinMaxScaler()
+        # For metrics where HIGHER is better: Silhouette, Calinski-Harabasz (reverse sort)
+        sil_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.silhouette_scores[x], reverse=True))}
+        ch_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.calinski_harabasz_scores[x], reverse=True))}
         
-        # For metrics where LOWER is better (BIC, AIC, Inertia, Davies-Bouldin)
-        bic_norm = scaler.fit_transform(bic_values).flatten()
-        aic_norm = scaler.fit_transform(aic_values).flatten()
-        inertia_norm = scaler.fit_transform(inertia_values).flatten()
-        db_norm = scaler.fit_transform(db_values).flatten()
+        # Composite score = average rank (lower = better)
+        for k in k_values:
+            avg_rank = (bic_ranks[k] + aic_ranks[k] + inertia_ranks[k] + 
+                       sil_ranks[k] + db_ranks[k] + ch_ranks[k]) / 6
+            self.composite_scores[k] = avg_rank
         
-        # For metrics where HIGHER is better (Silhouette, Calinski-Harabasz) - invert
-        sil_norm = 1 - scaler.fit_transform(sil_values).flatten()
-        ch_norm = 1 - scaler.fit_transform(ch_values).flatten()
-        
-        # Composite score (average of normalized metrics, lower = better)
-        for idx, k in enumerate(k_values):
-            composite = (bic_norm[idx] + aic_norm[idx] + inertia_norm[idx] + 
-                        sil_norm[idx] + db_norm[idx] + ch_norm[idx]) / 6
-            self.composite_scores[k] = composite
-        
-        print("\nComposite Scores (lower = better):")
+        print("\nComposite Scores (average rank, lower = better):")
         for k in k_values:
             print(f"  k={k}: {self.composite_scores[k]:.4f}")
         
-        print(f"\n✓ Composite scores computed")
+        # Print ranking table like in notebook
+        print("\n" + "-"*80)
+        print("RANKINGS BY METRIC (1 = Best)")
+        print("-"*80)
+        print(f"{'n_classes':<12} {'BIC_rank':<10} {'AIC_rank':<10} {'Inertia_rank':<14} "
+              f"{'Silhouette_rank':<17} {'Davies_Bouldin_rank':<20} {'Calinski_Harabasz_rank':<23} {'Composite_rank':<15}")
+        
+        # Sort by composite rank for display
+        comp_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.composite_scores[x]))}
+        
+        for k in k_values:
+            print(f"{k:<12} {bic_ranks[k]:<10} {aic_ranks[k]:<10} {inertia_ranks[k]:<14} "
+                  f"{sil_ranks[k]:<17} {db_ranks[k]:<20} {ch_ranks[k]:<23} {comp_ranks[k]:<15}")
+        
+        print(f"\n✓ Composite scores computed using rank-based averaging")
     
     def print_selection_criteria(self):
         """
@@ -275,11 +289,11 @@ class GroupBasedTrajectoryModel:
         sil_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.silhouette_scores[x], reverse=True))}
         comp_ranks = {k: rank+1 for rank, k in enumerate(sorted(k_values, key=lambda x: self.composite_scores[x]))}
         
-        header = f"\n{'k':<5} {'BIC':<12} {'Silhouette':<15} {'Composite':<12} {'Rank'}"
+        header = f"\n{'k':<5} {'BIC':<12} {'Silhouette':<15} {'Comp_Rank':<12} {'Overall_Rank'}"
         print(header)
-        print("-" * 60)
+        print("-" * 65)
         
-        # Sort by composite score
+        # Sort by composite score (which is now average rank)
         sorted_k = sorted(k_values, key=lambda x: self.composite_scores[x])
         
         for rank, k in enumerate(sorted_k, 1):
@@ -298,7 +312,7 @@ class GroupBasedTrajectoryModel:
     
     def select_optimal_k(self, X):
         """
-        Select optimal k based on lowest composite score.
+        Select optimal k based on lowest composite score (average rank).
         
         Args:
             X: Feature matrix (needed for predictions)
@@ -310,7 +324,7 @@ class GroupBasedTrajectoryModel:
         print("OPTIMAL MODEL SELECTION")
         print("="*80)
         
-        # Select k with lowest composite score
+        # Select k with lowest composite score (lowest average rank)
         self.optimal_k = min(self.composite_scores.items(), key=lambda x: x[1])[0]
         
         # Get corresponding model
@@ -321,10 +335,21 @@ class GroupBasedTrajectoryModel:
         self.labels = self.optimal_model.predict(X)
         
         print(f"\n✓ OPTIMAL NUMBER OF CLASSES: {self.optimal_k}")
-        print(f"  Composite Score: {self.composite_scores[self.optimal_k]:.4f}")
+        print(f"  Composite Score (Avg Rank): {self.composite_scores[self.optimal_k]:.3f}")
         print(f"\nDetailed Metrics:")
-        print(f"  BIC: {self.bic_scores[self.optimal_k]:,.1f} (rank: {sorted(self.bic_scores.items(), key=lambda x: x[1]).index((self.optimal_k, self.bic_scores[self.optimal_k])) + 1})")
-        print(f"  Silhouette: {self.silhouette_scores[self.optimal_k]:.4f} (rank: {sorted(self.silhouette_scores.items(), key=lambda x: x[1], reverse=True).index((self.optimal_k, self.silhouette_scores[self.optimal_k])) + 1})")
+        
+        # Calculate individual ranks
+        k_values = sorted(self.bic_scores.keys())
+        bic_rank = sorted(k_values, key=lambda x: self.bic_scores[x]).index(self.optimal_k) + 1
+        sil_rank = sorted(k_values, key=lambda x: self.silhouette_scores[x], reverse=True).index(self.optimal_k) + 1
+        
+        print(f"  BIC: {self.bic_scores[self.optimal_k]:,.0f} (rank: {bic_rank})")
+        print(f"  Silhouette: {self.silhouette_scores[self.optimal_k]:.3f} (rank: {sil_rank})")
+        
+        # Check if BIC alone would select different k
+        bic_optimal = min(self.bic_scores.items(), key=lambda x: x[1])[0]
+        if bic_optimal != self.optimal_k:
+            print(f"\n⚠ Note: BIC alone would select {bic_optimal} classes")
         
         return self.optimal_k
     
@@ -601,7 +626,7 @@ if __name__ == "__main__":
     print("DATASET 1: fixed_hour_length_issue.duckdb")
     print("="*80)
     
-    df1 = data_loader_duckdb('data/fixed_hour_length_issue.duckdb', 'clipped_brits_saits')
+    df1 = data_loader_duckdb('../../data/fixed_hour_length_issue_BRITSSAITS_10112025.duckdb', 'clipped_brits_saits')
     
     # Filter to ≤24h patients and aggregate
     patient_id_column = 'stay_id'
@@ -648,7 +673,7 @@ if __name__ == "__main__":
     print("DATASET 2: consensus_clustering_results_updated.duckdb")
     print("="*80)
     
-    df2 = data_loader_duckdb('data/consensus_clustering_results_updated.duckdb', 'df_subset')
+    df2 = data_loader_duckdb('../../data/consensus_clustering_results_updated.duckdb', 'df_subset')
     
     # Filter to ≤24h patients and aggregate
     patient_hour_counts = df2.groupby(patient_id_column).size().reset_index(name='n_hours')
