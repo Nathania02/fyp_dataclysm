@@ -63,6 +63,7 @@ def send_model_completed_email(to_email: str, to_name: str, run_id: int, model_t
     """
     Send notification when model training is completed
     """
+    to_email = "nathaniayeo@gmail.com"
     subject = f"Model Training Completed - Run #{run_id}"
     
     html_content = f"""
@@ -70,13 +71,15 @@ def send_model_completed_email(to_email: str, to_name: str, run_id: int, model_t
     <html>
     <head>
         <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #2c3e50; }}
             .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: #3498db; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
-            .content {{ background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }}
-            .info-box {{ background: white; padding: 15px; margin: 15px 0; border-radius: 6px; border-left: 4px solid #3498db; }}
-            .button {{ display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }}
-            .footer {{ text-align: center; margin-top: 20px; color: #7f8c8d; font-size: 12px; }}
+            .header {{ background: #5b7ed8; color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .content {{ background: #f0f4ff; padding: 30px; border-radius: 0 0 8px 8px; }}
+            .info-box {{ background: white; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 5px solid #5b7ed8; }}
+            .info-box strong {{ color: #5b7ed8; }}
+            .button {{ display: inline-block; padding: 14px 28px; background: #5b7ed8; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #8b9dc3; font-size: 12px; }}
         </style>
     </head>
     <body>
@@ -98,10 +101,8 @@ def send_model_completed_email(to_email: str, to_name: str, run_id: int, model_t
                 
                 <p>You can now view your results, including plots and metrics.</p>
                 
-                <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button">View Results</a>
-                
-                <p style="margin-top: 20px;">If you have any questions, please don't hesitate to reach out.</p>
-                
+                <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button" style="color: white;">View Results</a>
+                                
                 <div class="footer">
                     <p>This is an automated message from Model Training Platform</p>
                 </div>
@@ -291,13 +292,15 @@ def send_model_failed_email(to_email: str, to_name: str, run_id: int, model_type
     <html>
     <head>
         <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #2c3e50; }}
             .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: #e74c3c; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
-            .content {{ background: #f8d7da; padding: 30px; border-radius: 0 0 8px 8px; }}
-            .info-box {{ background: white; padding: 15px; margin: 15px 0; border-radius: 6px; border-left: 4px solid #e74c3c; }}
-            .button {{ display: inline-block; padding: 12px 24px; background: #e74c3c; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }}
-            .footer {{ text-align: center; margin-top: 20px; color: #7f8c8d; font-size: 12px; }}
+            .header {{ background: #5b7ed8; color: white; padding: 30px 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+            .header h1 {{ margin: 0; font-size: 24px; }}
+            .content {{ background: #f0f4ff; padding: 30px; border-radius: 0 0 8px 8px; }}
+            .info-box {{ background: white; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 5px solid #5b7ed8; }}
+            .info-box strong {{ color: #5b7ed8; }}
+            .button {{ display: inline-block; padding: 14px 28px; background: #5b7ed8; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #8b9dc3; font-size: 12px; }}
         </style>
     </head>
     <body>
@@ -319,7 +322,7 @@ def send_model_failed_email(to_email: str, to_name: str, run_id: int, model_type
                 
                 <p>Please check your dataset and try again. If the problem persists, contact support.</p>
                 
-                <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button">View Details</a>
+                <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button" style="color: white;">View Details</a>
                 
                 <div class="footer">
                     <p>This is an automated message from Model Training Platform</p>

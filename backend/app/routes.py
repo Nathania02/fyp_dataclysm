@@ -18,7 +18,7 @@ from app.auth import (
 )
 from app.config import settings
 from app.model_tasks import train_model
-from app.email import send_clinician_review_email
+from app.send_email import send_clinician_review_email, send_model_completed_email, send_model_failed_email
 
 router = APIRouter()
 
@@ -174,8 +174,29 @@ async def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
                     'optimal_clusters': result.get('optimal_clusters'),
                     'completed_at': datetime.utcnow().isoformat()
                 })
+                
+                # Send completion email to the data scientist
+                user = UserStorage.get_by_id(run['user_id'])
+                if user:
+                    send_model_completed_email(
+                        to_email=user['email'],
+                        to_name=user['email'].split('@')[0],
+                        run_id=run_id,
+                        model_type=run['model_type'],
+                        optimal_clusters=result.get('optimal_clusters')
+                    )
             else:
                 run = RunStorage.update(run_id, {'status': 'failed'})
+                
+                # Send failure email to the data scientist
+                user = UserStorage.get_by_id(run['user_id'])
+                if user:
+                    send_model_failed_email(
+                        to_email=user['email'],
+                        to_name=user['email'].split('@')[0],
+                        run_id=run_id,
+                        model_type=run['model_type']
+                    )
     
     return run
 
