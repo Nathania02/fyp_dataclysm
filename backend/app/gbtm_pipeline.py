@@ -445,25 +445,315 @@ class GroupBasedTrajectoryModel:
         
         return fig
     
-    def generate_all_plots(self, X, output_dir='results'):
+    def plot_class_sizes(self, figsize=(10, 6), save_path=None):
         """
-        Generate all diagnostic plots.
+        Plot distribution of class sizes.
+        """
+        unique, counts = np.unique(self.labels, return_counts=True)
+        percentages = counts / len(self.labels) * 100
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        colors = [f'C{i}' for i in range(self.optimal_k)]
+        bars = ax.bar(unique, counts, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+        
+        # Add count and percentage labels
+        for bar, count, pct in zip(bars, counts, percentages):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{count:,}\n({pct:.1f}%)',
+                   ha='center', va='bottom', fontsize=11, fontweight='bold')
+        
+        ax.set_xlabel('Class', fontsize=13)
+        ax.set_ylabel('Count', fontsize=13)
+        ax.set_title(f'Class Distribution (k={self.optimal_k})', fontsize=15, fontweight='bold')
+        ax.set_xticks(unique)
+        ax.set_xticklabels([f'Class {i}' for i in unique])
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_clinical_profiles_heatmap(self, X, feature_names, figsize=(14, 10), save_path=None):
+        """
+        Generate heatmap showing mean feature values for each class (clinical profiles).
+        """
+        # Calculate mean values for each class
+        class_profiles = []
+        for k in range(self.optimal_k):
+            class_mask = self.labels == k
+            class_mean = X[class_mask].mean(axis=0)
+            class_profiles.append(class_mean)
+        
+        class_profiles = np.array(class_profiles)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Create heatmap
+        im = ax.imshow(class_profiles.T, aspect='auto', cmap='RdYlBu_r', interpolation='nearest')
+        
+        # Set ticks and labels
+        ax.set_xticks(np.arange(self.optimal_k))
+        ax.set_yticks(np.arange(len(feature_names)))
+        ax.set_xticklabels([f'Class {i}\n(n={np.sum(self.labels==i)})' for i in range(self.optimal_k)])
+        ax.set_yticklabels(feature_names, fontsize=9)
+        
+        # Rotate the tick labels for better readability
+        plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, pad=0.02)
+        cbar.set_label('Standardized Mean Value', rotation=270, labelpad=20, fontsize=11)
+        
+        # Add title
+        ax.set_title('Clinical Profiles Heatmap - Mean Feature Values by Class', 
+                     fontsize=14, fontweight='bold', pad=15)
+        ax.set_xlabel('Class', fontsize=12)
+        ax.set_ylabel('Clinical Features', fontsize=12)
+        
+        # Add grid
+        ax.set_xticks(np.arange(self.optimal_k + 1) - 0.5, minor=True)
+        ax.set_yticks(np.arange(len(feature_names) + 1) - 0.5, minor=True)
+        ax.grid(which="minor", color="gray", linestyle='-', linewidth=0.5, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_feature_distributions(self, X, feature_names, top_n=10, figsize=(16, 12), save_path=None):
+        """
+        Plot distributions of top N features across classes using violin plots.
+        """
+        # Calculate variance for each feature across classes
+        feature_variance = []
+        for i in range(X.shape[1]):
+            class_means = [X[self.labels == k, i].mean() for k in range(self.optimal_k)]
+            feature_variance.append(np.var(class_means))
+        
+        # Get top N features with highest variance
+        top_indices = np.argsort(feature_variance)[-top_n:][::-1]
+        
+        # Create subplots
+        n_cols = 2
+        n_rows = (top_n + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        axes = axes.flatten()
+        
+        for idx, feat_idx in enumerate(top_indices):
+            ax = axes[idx]
+            
+            # Prepare data for violin plot
+            data_by_class = [X[self.labels == k, feat_idx] for k in range(self.optimal_k)]
+            
+            # Create violin plot
+            parts = ax.violinplot(data_by_class, positions=range(self.optimal_k),
+                                  showmeans=True, showmedians=True)
+            
+            # Color the violins
+            for pc, color_idx in zip(parts['bodies'], range(self.optimal_k)):
+                pc.set_facecolor(f'C{color_idx}')
+                pc.set_alpha(0.7)
+            
+            ax.set_xlabel('Class', fontsize=10)
+            ax.set_ylabel('Standardized Value', fontsize=10)
+            ax.set_title(feature_names[feat_idx], fontsize=11, fontweight='bold')
+            ax.set_xticks(range(self.optimal_k))
+            ax.set_xticklabels([f'{i}' for i in range(self.optimal_k)])
+            ax.grid(True, alpha=0.3, axis='y')
+        
+        # Hide unused subplots
+        for idx in range(top_n, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.suptitle(f'Top {top_n} Features with Highest Class Variance', 
+                     fontsize=16, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_feature_importance_bars(self, X, feature_names, top_n=15, figsize=(12, 8), save_path=None):
+        """
+        Plot feature importance based on variance across classes.
+        """
+        # Calculate variance for each feature across classes
+        feature_importance = []
+        for i in range(X.shape[1]):
+            class_means = [X[self.labels == k, i].mean() for k in range(self.optimal_k)]
+            feature_importance.append(np.var(class_means))
+        
+        # Get top N features
+        top_indices = np.argsort(feature_importance)[-top_n:]
+        top_features = [feature_names[i] for i in top_indices]
+        top_scores = [feature_importance[i] for i in top_indices]
+        
+        # Create plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        colors = plt.cm.viridis(np.linspace(0.3, 0.9, top_n))
+        bars = ax.barh(range(top_n), top_scores, color=colors, edgecolor='black', linewidth=0.8)
+        
+        ax.set_yticks(range(top_n))
+        ax.set_yticklabels(top_features, fontsize=10)
+        ax.set_xlabel('Variance Across Classes', fontsize=12)
+        ax.set_title(f'Top {top_n} Features by Class Separation', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for i, (bar, score) in enumerate(zip(bars, top_scores)):
+            width = bar.get_width()
+            ax.text(width, bar.get_y() + bar.get_height()/2., f'{score:.3f}',
+                   ha='left', va='center', fontsize=9, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_class_statistics_table(self, X, feature_names, save_path=None):
+        """
+        Create a visual table showing statistics for each class.
+        """
+        fig, ax = plt.subplots(figsize=(14, max(8, self.optimal_k * 1.5)))
+        ax.axis('tight')
+        ax.axis('off')
+        
+        # Calculate statistics for each class
+        table_data = []
+        headers = ['Class', 'Size', '%', 'Top 3 High Features', 'Top 3 Low Features']
+        
+        for k in range(self.optimal_k):
+            class_mask = self.labels == k
+            class_size = np.sum(class_mask)
+            class_pct = class_size / len(self.labels) * 100
+            
+            # Get class means
+            class_means = X[class_mask].mean(axis=0)
+            
+            # Top 3 highest features
+            top_high_idx = np.argsort(class_means)[-3:][::-1]
+            top_high = ', '.join([f"{feature_names[i][:20]}" for i in top_high_idx])
+            
+            # Top 3 lowest features
+            top_low_idx = np.argsort(class_means)[:3]
+            top_low = ', '.join([f"{feature_names[i][:20]}" for i in top_low_idx])
+            
+            table_data.append([
+                f'Class {k}',
+                f'{class_size:,}',
+                f'{class_pct:.1f}%',
+                top_high,
+                top_low
+            ])
+        
+        table = ax.table(cellText=table_data, colLabels=headers,
+                        cellLoc='left', loc='center',
+                        colWidths=[0.08, 0.10, 0.08, 0.37, 0.37])
+        
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 2.5)
+        
+        # Style header
+        for i in range(len(headers)):
+            cell = table[(0, i)]
+            cell.set_facecolor('#4CAF50')
+            cell.set_text_props(weight='bold', color='white', fontsize=10)
+        
+        # Style rows
+        for i in range(1, len(table_data) + 1):
+            for j in range(len(headers)):
+                cell = table[(i, j)]
+                if i % 2 == 0:
+                    cell.set_facecolor('#f0f0f0')
+                cell.set_edgecolor('gray')
+        
+        plt.title('Class Statistics and Dominant Features', 
+                 fontsize=14, fontweight='bold', pad=20)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def generate_all_plots(self, X, feature_names, output_dir='results'):
+        """
+        Generate all diagnostic plots including clinical profile analysis.
+        
+        Args:
+            X: Preprocessed feature matrix
+            feature_names: List of feature names
+            output_dir: Directory to save plots
         """
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True, parents=True)
         
         print("\n" + "="*80)
-        print("GENERATING DIAGNOSTIC PLOTS")
+        print("GENERATING DIAGNOSTIC PLOTS AND CLINICAL PROFILE ANALYSIS")
         print("="*80)
         
+        # 1. Model selection metrics
         self.plot_selection_metrics(
             save_path=output_path / 'gbtm_selection_metrics.png'
         )
         plt.close()
         
+        # 2. t-SNE visualization
         self.plot_tsne(
             X,
             save_path=output_path / 'gbtm_tsne_phenotypes.png'
+        )
+        plt.close()
+        
+        # 3. Class sizes distribution
+        self.plot_class_sizes(
+            save_path=output_path / 'gbtm_class_sizes.png'
+        )
+        plt.close()
+        
+        # 4. Clinical profiles heatmap
+        self.plot_clinical_profiles_heatmap(
+            X, feature_names,
+            save_path=output_path / 'gbtm_clinical_profiles_heatmap.png'
+        )
+        plt.close()
+        
+        # 5. Feature distributions across classes
+        self.plot_feature_distributions(
+            X, feature_names, top_n=10,
+            save_path=output_path / 'gbtm_feature_distributions.png'
+        )
+        plt.close()
+        
+        # 6. Feature importance
+        self.plot_feature_importance_bars(
+            X, feature_names, top_n=15,
+            save_path=output_path / 'gbtm_feature_importance.png'
+        )
+        plt.close()
+        
+        # 7. Class statistics table
+        self.plot_class_statistics_table(
+            X, feature_names,
+            save_path=output_path / 'gbtm_class_statistics.png'
         )
         plt.close()
         
@@ -546,8 +836,8 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
     df_with_phenotypes = df.copy()
     df_with_phenotypes['phenotype'] = model.labels
     
-    # Generate all diagnostic plots
-    model.generate_all_plots(X_scaled, output_dir=output_dir)
+    # Generate all diagnostic plots (including clinical profile analysis)
+    model.generate_all_plots(X_scaled, trajectory_cols, output_dir=output_dir)
     
     # Print summary statistics
     print("\n" + "="*80)

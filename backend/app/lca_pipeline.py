@@ -69,6 +69,14 @@ class LatentClassAnalysis:
         print("PREPROCESSING PIPELINE")
         print("="*80)
         
+        # Filter exclude_cols to only include columns that exist in the dataframe
+        if exclude_cols:
+            existing_exclude_cols = [col for col in exclude_cols if col in df.columns]
+            missing_cols = [col for col in exclude_cols if col not in df.columns]
+            if missing_cols:
+                print(f"\nNote: {len(missing_cols)} exclude columns not found in dataset: {missing_cols}")
+            exclude_cols = existing_exclude_cols
+        
         # Separate excluded columns
         df_transformed = df.drop(columns=list(exclude_cols), errors='ignore').copy()
         df_excluded = df[list(exclude_cols)].copy() if exclude_cols else None
@@ -657,19 +665,239 @@ class LatentClassAnalysis:
         
         return fig
     
-    def generate_all_plots(self, X, output_dir='results'):
+    def plot_clinical_profiles_heatmap(self, X, feature_names, figsize=(14, 10), save_path=None):
+        """
+        Generate heatmap showing mean feature values for each class (clinical profiles).
+        """
+        # Calculate mean values for each class
+        class_profiles = []
+        for k in range(self.optimal_k):
+            class_mask = self.labels == k
+            class_mean = X[class_mask].mean(axis=0)
+            class_profiles.append(class_mean)
+        
+        class_profiles = np.array(class_profiles)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Create heatmap
+        im = ax.imshow(class_profiles.T, aspect='auto', cmap='RdYlBu_r', interpolation='nearest')
+        
+        # Set ticks and labels
+        ax.set_xticks(np.arange(self.optimal_k))
+        ax.set_yticks(np.arange(len(feature_names)))
+        ax.set_xticklabels([f'Class {i}\n(n={np.sum(self.labels==i)})' for i in range(self.optimal_k)])
+        ax.set_yticklabels(feature_names, fontsize=9)
+        
+        # Rotate the tick labels for better readability
+        plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, pad=0.02)
+        cbar.set_label('Standardized Mean Value', rotation=270, labelpad=20, fontsize=11)
+        
+        # Add title
+        ax.set_title('Clinical Profiles Heatmap - Mean Feature Values by Class', 
+                     fontsize=14, fontweight='bold', pad=15)
+        ax.set_xlabel('Class', fontsize=12)
+        ax.set_ylabel('Clinical Features', fontsize=12)
+        
+        # Add grid
+        ax.set_xticks(np.arange(self.optimal_k + 1) - 0.5, minor=True)
+        ax.set_yticks(np.arange(len(feature_names) + 1) - 0.5, minor=True)
+        ax.grid(which="minor", color="gray", linestyle='-', linewidth=0.5, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_feature_distributions(self, X, feature_names, top_n=10, figsize=(16, 12), save_path=None):
+        """
+        Plot distributions of top N features across classes using violin plots.
+        """
+        # Calculate variance for each feature across classes
+        feature_variance = []
+        for i in range(X.shape[1]):
+            class_means = [X[self.labels == k, i].mean() for k in range(self.optimal_k)]
+            feature_variance.append(np.var(class_means))
+        
+        # Get top N features with highest variance
+        top_indices = np.argsort(feature_variance)[-top_n:][::-1]
+        
+        # Create subplots
+        n_cols = 2
+        n_rows = (top_n + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        axes = axes.flatten()
+        
+        for idx, feat_idx in enumerate(top_indices):
+            ax = axes[idx]
+            
+            # Prepare data for violin plot
+            data_by_class = [X[self.labels == k, feat_idx] for k in range(self.optimal_k)]
+            
+            # Create violin plot
+            parts = ax.violinplot(data_by_class, positions=range(self.optimal_k),
+                                  showmeans=True, showmedians=True)
+            
+            # Color the violins
+            for pc, color_idx in zip(parts['bodies'], range(self.optimal_k)):
+                pc.set_facecolor(f'C{color_idx}')
+                pc.set_alpha(0.7)
+            
+            ax.set_xlabel('Class', fontsize=10)
+            ax.set_ylabel('Standardized Value', fontsize=10)
+            ax.set_title(feature_names[feat_idx], fontsize=11, fontweight='bold')
+            ax.set_xticks(range(self.optimal_k))
+            ax.set_xticklabels([f'{i}' for i in range(self.optimal_k)])
+            ax.grid(True, alpha=0.3, axis='y')
+        
+        # Hide unused subplots
+        for idx in range(top_n, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.suptitle(f'Top {top_n} Features with Highest Class Variance', 
+                     fontsize=16, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_feature_importance_bars(self, X, feature_names, top_n=15, figsize=(12, 8), save_path=None):
+        """
+        Plot feature importance based on variance across classes.
+        """
+        # Calculate variance for each feature across classes
+        feature_importance = []
+        for i in range(X.shape[1]):
+            class_means = [X[self.labels == k, i].mean() for k in range(self.optimal_k)]
+            feature_importance.append(np.var(class_means))
+        
+        # Get top N features
+        top_indices = np.argsort(feature_importance)[-top_n:]
+        top_features = [feature_names[i] for i in top_indices]
+        top_scores = [feature_importance[i] for i in top_indices]
+        
+        # Create plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        colors = plt.cm.viridis(np.linspace(0.3, 0.9, top_n))
+        bars = ax.barh(range(top_n), top_scores, color=colors, edgecolor='black', linewidth=0.8)
+        
+        ax.set_yticks(range(top_n))
+        ax.set_yticklabels(top_features, fontsize=10)
+        ax.set_xlabel('Variance Across Classes', fontsize=12)
+        ax.set_title(f'Top {top_n} Features by Class Separation', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels
+        for i, (bar, score) in enumerate(zip(bars, top_scores)):
+            width = bar.get_width()
+            ax.text(width, bar.get_y() + bar.get_height()/2., f'{score:.3f}',
+                   ha='left', va='center', fontsize=9, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_class_statistics_table(self, X, feature_names, save_path=None):
+        """
+        Create a visual table showing statistics for each class.
+        """
+        fig, ax = plt.subplots(figsize=(14, max(8, self.optimal_k * 1.5)))
+        ax.axis('tight')
+        ax.axis('off')
+        
+        # Calculate statistics for each class
+        table_data = []
+        headers = ['Class', 'Size', '%', 'Top 3 High Features', 'Top 3 Low Features']
+        
+        for k in range(self.optimal_k):
+            class_mask = self.labels == k
+            class_size = np.sum(class_mask)
+            class_pct = class_size / len(self.labels) * 100
+            
+            # Get class means
+            class_means = X[class_mask].mean(axis=0)
+            
+            # Top 3 highest features
+            top_high_idx = np.argsort(class_means)[-3:][::-1]
+            top_high = ', '.join([f"{feature_names[i][:20]}" for i in top_high_idx])
+            
+            # Top 3 lowest features
+            top_low_idx = np.argsort(class_means)[:3]
+            top_low = ', '.join([f"{feature_names[i][:20]}" for i in top_low_idx])
+            
+            table_data.append([
+                f'Class {k}',
+                f'{class_size:,}',
+                f'{class_pct:.1f}%',
+                top_high,
+                top_low
+            ])
+        
+        table = ax.table(cellText=table_data, colLabels=headers,
+                        cellLoc='left', loc='center',
+                        colWidths=[0.08, 0.10, 0.08, 0.37, 0.37])
+        
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 2.5)
+        
+        # Style header
+        for i in range(len(headers)):
+            cell = table[(0, i)]
+            cell.set_facecolor('#4CAF50')
+            cell.set_text_props(weight='bold', color='white', fontsize=10)
+        
+        # Style rows
+        for i in range(1, len(table_data) + 1):
+            for j in range(len(headers)):
+                cell = table[(i, j)]
+                if i % 2 == 0:
+                    cell.set_facecolor('#f0f0f0')
+                cell.set_edgecolor('gray')
+        
+        plt.title('Class Statistics and Dominant Features', 
+                 fontsize=14, fontweight='bold', pad=20)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def generate_all_plots(self, X, feature_names=None, output_dir='results', include_clinical_profiles=False):
         """
         Generate all diagnostic plots.
         
         Args:
             X: Preprocessed feature matrix
+            feature_names: List of feature names (required if include_clinical_profiles=True)
             output_dir: Directory to save plots
+            include_clinical_profiles: Whether to generate clinical profile analysis plots
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
         print("\n" + "="*80)
-        print("GENERATING DIAGNOSTIC PLOTS")
+        if include_clinical_profiles:
+            print("GENERATING DIAGNOSTIC PLOTS AND CLINICAL PROFILE ANALYSIS")
+        else:
+            print("GENERATING DIAGNOSTIC PLOTS")
         print("="*80)
         
         # Only plot model selection if multiple models were fitted
@@ -702,6 +930,32 @@ class LatentClassAnalysis:
             save_path=output_path / 'lca_tsne_visualization.png'
         )
         plt.close()
+        
+        # Generate clinical profile analysis if requested
+        if include_clinical_profiles and feature_names is not None:
+            self.plot_clinical_profiles_heatmap(
+                X, feature_names,
+                save_path=output_path / 'lca_clinical_profiles_heatmap.png'
+            )
+            plt.close()
+            
+            self.plot_feature_distributions(
+                X, feature_names, top_n=10,
+                save_path=output_path / 'lca_feature_distributions.png'
+            )
+            plt.close()
+            
+            self.plot_feature_importance_bars(
+                X, feature_names, top_n=15,
+                save_path=output_path / 'lca_feature_importance.png'
+            )
+            plt.close()
+            
+            self.plot_class_statistics_table(
+                X, feature_names,
+                save_path=output_path / 'lca_class_statistics.png'
+            )
+            plt.close()
         
         print(f"\nAll plots saved to: {output_path}")
 
@@ -810,6 +1064,77 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
     
     # Generate all diagnostic plots
     model.generate_all_plots(X_processed, output_dir=output_dir)
+    
+    # If optimal k is not 4, generate k=4 results as well
+    if optimal_k != 4 and 4 in model.models:
+        print("\n" + "="*80)
+        print("GENERATING ADDITIONAL RESULTS FOR k=4")
+        print("="*80)
+        print(f"Note: Optimal k={optimal_k}, but also generating k=4 results as requested")
+        
+        # Temporarily switch to k=4 model
+        original_optimal_k = model.optimal_k
+        original_optimal_model = model.optimal_model
+        original_labels = model.labels
+        original_probabilities = model.probabilities
+        
+        model.optimal_k = 4
+        model.optimal_model = model.models[4]
+        labels_k4, probabilities_k4 = model.predict(X_processed)
+        
+        # Create separate output directory for k=4
+        output_path_k4 = Path(output_dir) / 'k4_results'
+        output_path_k4.mkdir(parents=True, exist_ok=True)
+        
+        # Generate plots for k=4 with clinical profile analysis
+        model.generate_all_plots(X_processed, feature_names=feature_names, 
+                                output_dir=str(output_path_k4), 
+                                include_clinical_profiles=True)
+        
+        # Save k=4 results
+        df_with_classes_k4 = df_transformed.copy()
+        df_with_classes_k4['lca_class'] = labels_k4
+        for i in range(4):
+            df_with_classes_k4[f'prob_class_{i}'] = probabilities_k4[:, i]
+        
+        results_file_k4 = output_path_k4 / 'lca_results_k4.csv'
+        df_with_classes_k4.to_csv(results_file_k4, index=False)
+        print(f"k=4 results saved to: {results_file_k4}")
+        
+        # Save k=4 summary
+        summary_file_k4 = output_path_k4 / 'lca_summary_k4.txt'
+        with open(summary_file_k4, 'w') as f:
+            f.write("="*80 + "\n")
+            f.write("LATENT CLASS ANALYSIS SUMMARY (k=4 RESULTS)\n")
+            f.write("="*80 + "\n\n")
+            f.write(f"Number of classes: 4 (forced, optimal was {original_optimal_k})\n")
+            f.write(f"Selection method: {selection_method}\n\n")
+            f.write("Class sizes:\n")
+            f.write(df_with_classes_k4['lca_class'].value_counts().sort_index().to_string())
+            f.write("\n\n")
+            f.write("Class proportions:\n")
+            f.write((df_with_classes_k4['lca_class'].value_counts(normalize=True).sort_index() * 100).to_string())
+            f.write("\n\n")
+            if 4 in model.metrics:
+                f.write("Model metrics for k=4:\n")
+                for metric, value in model.metrics[4].items():
+                    f.write(f"  {metric}: {value:.4f}\n")
+        
+        print(f"k=4 summary saved to: {summary_file_k4}")
+        print(f"\nk=4 class sizes:")
+        print(df_with_classes_k4['lca_class'].value_counts().sort_index())
+        print(f"\nk=4 class proportions (%):")
+        print((df_with_classes_k4['lca_class'].value_counts(normalize=True).sort_index() * 100).round(2))
+        
+        # Restore original optimal model
+        model.optimal_k = original_optimal_k
+        model.optimal_model = original_optimal_model
+        model.labels = original_labels
+        model.probabilities = original_probabilities
+        
+        print(f"\n✓ Generated both optimal k={original_optimal_k} and k=4 results")
+    elif optimal_k == 4:
+        print("\n✓ Optimal k is already 4, no additional results needed")
     
     # Save results to CSV
     output_path = Path(output_dir)
