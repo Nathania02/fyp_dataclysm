@@ -1204,8 +1204,8 @@ if __name__ == "__main__":
     
     # Load data from DuckDB
     df = data_loader_duckdb(
-        '../../data/final_imputed_output_26102025.duckdb',
-        'final_imputed_output_26102025'
+        '../../data/fixed_hour_length_issue_BRITSSAITS_10112025.duckdb',
+        'clipped_brits_saits'
     )
     
     # Define columns to exclude (from TAME - less than 24H.ipynb notebook)
@@ -1224,8 +1224,8 @@ if __name__ == "__main__":
         max_iter=200,
         correlation_threshold=0.8,
         log_transform=False,
-        subsample_data=0.02,  # Use 2% of data for testing
-        output_dir='backend/output_dir/LCA',
+        subsample_data=None,  # Use full dataset
+        output_dir='backend/output_dir/LCA_fixed_hour_length',
         manual_k=None,  # Set to specific k value to skip automatic selection
         selection_method='composite',  # Use 7-metric composite scoring
         random_state=42
