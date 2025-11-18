@@ -5,7 +5,7 @@
         <div class="footer-left">
           <div class="footer-logo">
             <span class="logo-icon">🧠</span>
-            Model Training Platform
+            Phenosense
           </div>
           <p>Collaborative Model Training Platform</p>
           <p class="partnership">In partnership with SingHealth</p>

@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <header class="header" v-if="authStore.isAuthenticated">
-      <h1>Model Training Platform</h1>
+      <h1>Phenosense</h1>
       <div class="header-right">
         <router-link to="/notifications" class="notification-icon">
           🔔

@@ -6,7 +6,7 @@
             <div class="logo-circle"></div>
             🧠
         </span>
-        Model Training Platform
+        Phenosense
       </div>
       <div class="nav-links">
         <router-link to="/about" class="nav-link">About Us</router-link>
