@@ -694,14 +694,123 @@ class GroupBasedTrajectoryModel:
         
         return fig
     
-    def generate_all_plots(self, X, feature_names, output_dir='results'):
+    def plot_sofa_distribution_by_class(self, df_with_classes, save_path=None):
         """
-        Generate all diagnostic plots including clinical profile analysis.
+        Plot SOFA score distribution by class for model validation.
+        SOFA is a validated mortality predictor.
+        
+        Args:
+            df_with_classes: DataFrame with gbtm_class and sofa_total columns
+            save_path: Path to save the figure
+        """
+        from scipy.stats import f_oneway
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Prepare data
+        cluster_groups = [df_with_classes[df_with_classes['gbtm_class'] == k]['sofa_total'].dropna() 
+                          for k in sorted(df_with_classes['gbtm_class'].unique())]
+        f_stat, p_value = f_oneway(*cluster_groups)
+        
+        # Boxplot
+        ax = axes[0]
+        df_with_classes.boxplot(column='sofa_total', by='gbtm_class', ax=ax)
+        ax.set_xlabel('GBTM Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('SOFA Score', fontsize=12, fontweight='bold')
+        ax.set_title(f'SOFA Distribution by Class\n(ANOVA: F={f_stat:.2f}, p={p_value:.2e})', 
+                     fontsize=12, fontweight='bold')
+        plt.sca(ax)
+        plt.xticks(rotation=0)
+        fig.suptitle('')  # Remove default title from boxplot
+        
+        # Bar chart with error bars
+        ax = axes[1]
+        cluster_stats = df_with_classes.groupby('gbtm_class')['sofa_total'].agg(['mean', 'sem'])
+        colors = plt.cm.Set3(np.linspace(0, 1, len(cluster_stats)))
+        ax.bar(cluster_stats.index, cluster_stats['mean'], 
+               yerr=cluster_stats['sem'], capsize=5, alpha=0.7, color=colors)
+        ax.set_xlabel('GBTM Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Mean SOFA Score', fontsize=12, fontweight='bold')
+        ax.set_title('Mean SOFA ± SEM by Class', fontsize=12, fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+        
+        # Add mean values on bars
+        for i, (idx, row) in enumerate(cluster_stats.iterrows()):
+            ax.text(idx, row['mean'] + row['sem'] + 0.2, f"{row['mean']:.1f}", 
+                   ha='center', va='bottom', fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_mortality_proxy_by_class(self, df_with_classes, save_path=None):
+        """
+        Plot high SOFA (>=10) rate by class as a mortality proxy.
+        SOFA >= 10 is associated with significantly increased mortality risk.
+        
+        Args:
+            df_with_classes: DataFrame with gbtm_class and sofa_total columns
+            save_path: Path to save the figure
+        """
+        from scipy.stats import chi2_contingency
+        
+        # Calculate high SOFA rate (SOFA >= 10 is associated with higher mortality)
+        df_with_classes['high_sofa'] = (df_with_classes['sofa_total'] >= 10).astype(int)
+        
+        # Calculate rates by class
+        mortality_stats = df_with_classes.groupby('gbtm_class').agg({
+            'high_sofa': ['sum', 'count', 'mean']
+        })
+        mortality_stats.columns = ['high_sofa_count', 'total', 'high_sofa_rate']
+        mortality_stats['high_sofa_rate'] = mortality_stats['high_sofa_rate'] * 100
+        
+        # Chi-square test
+        contingency_table = pd.crosstab(df_with_classes['gbtm_class'], 
+                                        df_with_classes['high_sofa'])
+        chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+        
+        # Plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        colors = plt.cm.Set3(np.linspace(0, 1, len(mortality_stats)))
+        bars = ax.bar(mortality_stats.index, mortality_stats['high_sofa_rate'], 
+                     alpha=0.7, color=colors)
+        
+        ax.set_xlabel('GBTM Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('High Severity Rate (%)', fontsize=12, fontweight='bold')
+        ax.set_title(f'High Severity (SOFA ≥ 10) Rate by Class\n' +
+                     f'(Chi-square: χ²={chi2:.2f}, p={p_value:.2e})', 
+                     fontsize=13, fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_ylim(0, max(mortality_stats['high_sofa_rate']) * 1.15)
+        
+        # Add percentage labels on bars
+        for i, (idx, row) in enumerate(mortality_stats.iterrows()):
+            ax.text(idx, row['high_sofa_rate'] + 1, 
+                   f"{row['high_sofa_rate']:.1f}%\n(n={int(row['high_sofa_count'])}/{int(row['total'])})", 
+                   ha='center', va='bottom', fontweight='bold', fontsize=10)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def generate_all_plots(self, X, feature_names, output_dir='results', df_with_classes=None):
+        """
+        Generate all diagnostic plots including clinical profile analysis and validation charts.
         
         Args:
             X: Preprocessed feature matrix
             feature_names: List of feature names
             output_dir: Directory to save plots
+            df_with_classes: DataFrame with class assignments and clinical data (for validation charts)
         """
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True, parents=True)
@@ -756,6 +865,21 @@ class GroupBasedTrajectoryModel:
             save_path=output_path / 'gbtm_class_statistics.png'
         )
         plt.close()
+        
+        # 8. Validation charts if df_with_classes is provided
+        if df_with_classes is not None and 'sofa_total' in df_with_classes.columns:
+            print("\nGenerating validation charts...")
+            self.plot_sofa_distribution_by_class(
+                df_with_classes,
+                save_path=output_path / 'gbtm_sofa_distribution_validation.png'
+            )
+            plt.close()
+            
+            self.plot_mortality_proxy_by_class(
+                df_with_classes,
+                save_path=output_path / 'gbtm_mortality_proxy_validation.png'
+            )
+            plt.close()
         
         print(f"\nAll plots saved to: {output_path}")
 
@@ -835,9 +959,11 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
     # Add phenotype labels to DataFrame
     df_with_phenotypes = df.copy()
     df_with_phenotypes['phenotype'] = model.labels
+    df_with_phenotypes['gbtm_class'] = model.labels  # Add for validation charts
     
-    # Generate all diagnostic plots (including clinical profile analysis)
-    model.generate_all_plots(X_scaled, trajectory_cols, output_dir=output_dir)
+    # Generate all diagnostic plots (including clinical profile analysis and validation)
+    model.generate_all_plots(X_scaled, trajectory_cols, output_dir=output_dir, 
+                            df_with_classes=df_with_phenotypes)
     
     # Print summary statistics
     print("\n" + "="*80)
@@ -1000,14 +1126,17 @@ if __name__ == "__main__":
     
     # ============================================================
     # Dataset 2: consensus_clustering_results_updated.duckdb
-    # Expected: Patients with ≤24h data
+    # Using ALL 7832 rows (no filtering, no aggregation)
     # ============================================================
     print("\n\n" + "="*80)
     print("DATASET 2: consensus_clustering_results_updated.duckdb")
     print("="*80)
     
     df2 = data_loader_duckdb('../../data/consensus_clustering_results_updated.duckdb', 'df_subset')
-    df2_agg = filter_and_aggregate_patients(df2, max_hours=24, filter_enabled=True)
+    # Use all 7832 rows directly without filtering or aggregation
+    df2_agg = df2.copy()
+    print(f"\nUsing ALL {len(df2_agg)} rows (no filtering, no aggregation)")
+    print(f"Data shape: {df2_agg.shape}")
     
     if len(df2_agg) > 0:
         results2 = run_gbtm_pipeline(

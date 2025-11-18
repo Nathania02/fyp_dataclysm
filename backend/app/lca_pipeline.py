@@ -880,7 +880,115 @@ class LatentClassAnalysis:
         
         return fig
     
-    def generate_all_plots(self, X, feature_names=None, output_dir='results', include_clinical_profiles=False):
+    def plot_sofa_distribution_by_class(self, df_with_classes, save_path=None):
+        """
+        Plot SOFA score distribution by class for model validation.
+        SOFA is a validated mortality predictor.
+        
+        Args:
+            df_with_classes: DataFrame with lca_class and sofa_total columns
+            save_path: Path to save the figure
+        """
+        from scipy.stats import f_oneway
+        
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        
+        # Prepare data
+        cluster_groups = [df_with_classes[df_with_classes['lca_class'] == k]['sofa_total'].dropna() 
+                          for k in sorted(df_with_classes['lca_class'].unique())]
+        f_stat, p_value = f_oneway(*cluster_groups)
+        
+        # Boxplot
+        ax = axes[0]
+        df_with_classes.boxplot(column='sofa_total', by='lca_class', ax=ax)
+        ax.set_xlabel('LCA Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('SOFA Score', fontsize=12, fontweight='bold')
+        ax.set_title(f'SOFA Distribution by Class\n(ANOVA: F={f_stat:.2f}, p={p_value:.2e})', 
+                     fontsize=12, fontweight='bold')
+        plt.sca(ax)
+        plt.xticks(rotation=0)
+        fig.suptitle('')  # Remove default title from boxplot
+        
+        # Bar chart with error bars
+        ax = axes[1]
+        cluster_stats = df_with_classes.groupby('lca_class')['sofa_total'].agg(['mean', 'sem'])
+        colors = plt.cm.Set3(np.linspace(0, 1, len(cluster_stats)))
+        ax.bar(cluster_stats.index, cluster_stats['mean'], 
+               yerr=cluster_stats['sem'], capsize=5, alpha=0.7, color=colors)
+        ax.set_xlabel('LCA Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Mean SOFA Score', fontsize=12, fontweight='bold')
+        ax.set_title('Mean SOFA ± SEM by Class', fontsize=12, fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+        
+        # Add mean values on bars
+        for i, (idx, row) in enumerate(cluster_stats.iterrows()):
+            ax.text(idx, row['mean'] + row['sem'] + 0.2, f"{row['mean']:.1f}", 
+                   ha='center', va='bottom', fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def plot_mortality_proxy_by_class(self, df_with_classes, save_path=None):
+        """
+        Plot high SOFA (>=10) rate by class as a mortality proxy.
+        SOFA >= 10 is associated with significantly increased mortality risk.
+        
+        Args:
+            df_with_classes: DataFrame with lca_class and sofa_total columns
+            save_path: Path to save the figure
+        """
+        from scipy.stats import chi2_contingency
+        
+        # Calculate high SOFA rate (SOFA >= 10 is associated with higher mortality)
+        df_with_classes['high_sofa'] = (df_with_classes['sofa_total'] >= 10).astype(int)
+        
+        # Calculate rates by class
+        mortality_stats = df_with_classes.groupby('lca_class').agg({
+            'high_sofa': ['sum', 'count', 'mean']
+        })
+        mortality_stats.columns = ['high_sofa_count', 'total', 'high_sofa_rate']
+        mortality_stats['high_sofa_rate'] = mortality_stats['high_sofa_rate'] * 100
+        
+        # Chi-square test
+        contingency_table = pd.crosstab(df_with_classes['lca_class'], 
+                                        df_with_classes['high_sofa'])
+        chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+        
+        # Plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        colors = plt.cm.Set3(np.linspace(0, 1, len(mortality_stats)))
+        bars = ax.bar(mortality_stats.index, mortality_stats['high_sofa_rate'], 
+                     alpha=0.7, color=colors)
+        
+        ax.set_xlabel('LCA Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('High Severity Rate (%)', fontsize=12, fontweight='bold')
+        ax.set_title(f'High Severity (SOFA ≥ 10) Rate by Class\n' +
+                     f'(Chi-square: χ²={chi2:.2f}, p={p_value:.2e})', 
+                     fontsize=13, fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_ylim(0, max(mortality_stats['high_sofa_rate']) * 1.15)
+        
+        # Add percentage labels on bars
+        for i, (idx, row) in enumerate(mortality_stats.iterrows()):
+            ax.text(idx, row['high_sofa_rate'] + 1, 
+                   f"{row['high_sofa_rate']:.1f}%\n(n={int(row['high_sofa_count'])}/{int(row['total'])})", 
+                   ha='center', va='bottom', fontweight='bold', fontsize=10)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Saved: {save_path}")
+        
+        return fig
+    
+    def generate_all_plots(self, X, feature_names=None, output_dir='results', include_clinical_profiles=False, df_with_classes=None):
         """
         Generate all diagnostic plots.
         
@@ -889,6 +997,7 @@ class LatentClassAnalysis:
             feature_names: List of feature names (required if include_clinical_profiles=True)
             output_dir: Directory to save plots
             include_clinical_profiles: Whether to generate clinical profile analysis plots
+            df_with_classes: DataFrame with class assignments and clinical data (for validation charts)
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -954,6 +1063,21 @@ class LatentClassAnalysis:
             self.plot_class_statistics_table(
                 X, feature_names,
                 save_path=output_path / 'lca_class_statistics.png'
+            )
+            plt.close()
+        
+        # Generate validation charts if df_with_classes is provided
+        if df_with_classes is not None and 'sofa_total' in df_with_classes.columns:
+            print("\nGenerating validation charts...")
+            self.plot_sofa_distribution_by_class(
+                df_with_classes,
+                save_path=output_path / 'lca_sofa_distribution_validation.png'
+            )
+            plt.close()
+            
+            self.plot_mortality_proxy_by_class(
+                df_with_classes,
+                save_path=output_path / 'lca_mortality_proxy_validation.png'
             )
             plt.close()
         
@@ -1062,8 +1186,11 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
     for i in range(optimal_k):
         df_with_classes[f'prob_class_{i}'] = probabilities[:, i]
     
-    # Generate all diagnostic plots
-    model.generate_all_plots(X_processed, output_dir=output_dir)
+    # Generate all diagnostic plots with clinical profile analysis and validation charts
+    model.generate_all_plots(X_processed, feature_names=feature_names, 
+                            output_dir=output_dir, 
+                            include_clinical_profiles=True,
+                            df_with_classes=df_with_classes)
     
     # If optimal k is not 4, generate k=4 results as well
     if optimal_k != 4 and 4 in model.models:
@@ -1086,16 +1213,17 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
         output_path_k4 = Path(output_dir) / 'k4_results'
         output_path_k4.mkdir(parents=True, exist_ok=True)
         
-        # Generate plots for k=4 with clinical profile analysis
-        model.generate_all_plots(X_processed, feature_names=feature_names, 
-                                output_dir=str(output_path_k4), 
-                                include_clinical_profiles=True)
-        
         # Save k=4 results
         df_with_classes_k4 = df_transformed.copy()
         df_with_classes_k4['lca_class'] = labels_k4
         for i in range(4):
             df_with_classes_k4[f'prob_class_{i}'] = probabilities_k4[:, i]
+        
+        # Generate plots for k=4 with clinical profile analysis and validation charts
+        model.generate_all_plots(X_processed, feature_names=feature_names, 
+                                output_dir=str(output_path_k4), 
+                                include_clinical_profiles=True,
+                                df_with_classes=df_with_classes_k4)
         
         results_file_k4 = output_path_k4 / 'lca_results_k4.csv'
         df_with_classes_k4.to_csv(results_file_k4, index=False)
@@ -1202,11 +1330,53 @@ if __name__ == "__main__":
     Example of how to use the LCA pipeline
     """
     
-    # Load data from DuckDB
+    # Load data from DuckDB - fixed_hour_length (the one from your notebook)
     df = data_loader_duckdb(
         '../../data/fixed_hour_length_issue_BRITSSAITS_10112025.duckdb',
         'clipped_brits_saits'
     )
+    
+    print("\n" + "="*80)
+    print("FILTERING PATIENTS WITH >24 HOURS (FROM NOTEBOOK)")
+    print("="*80)
+    print(f"\nInitial data shape: {df.shape}")
+    print(f"Number of unique patients: {df['stay_id'].nunique():,}")
+    
+    # Step 1: Count hours per patient to identify those with >=24 hours (corrected)
+    print("\nStep 1: Identifying patients with >=24 hours of data...")
+    patient_hour_counts = df.groupby('stay_id').size().reset_index(name='n_hours')
+    patients_gte24h = patient_hour_counts[patient_hour_counts['n_hours'] >= 24]['stay_id']
+    
+    print(f"Patients with <24 hours: {len(patient_hour_counts[patient_hour_counts['n_hours'] < 24]):,} ({len(patient_hour_counts[patient_hour_counts['n_hours'] < 24])/len(patient_hour_counts)*100:.2f}%)")
+    print(f"Patients with >=24 hours: {len(patients_gte24h):,} ({len(patients_gte24h)/len(patient_hour_counts)*100:.2f}%)")
+    
+    # Step 2: Filter to only include patients with >=24 hours
+    df_filtered = df[df['stay_id'].isin(patients_gte24h)].copy()
+    print(f"\nStep 2: Filtering to patients with >=24 hours...")
+    print(f"After filtering: {df_filtered.shape[0]:,} rows")
+    
+    # Step 3: AGGREGATE to 1 row per patient (like GBTM does)
+    print("\nStep 3: Aggregating to 1 row per patient (GBTM-style)...")
+    agg_dict = {}
+    for col in df_filtered.columns:
+        if col == 'stay_id':
+            continue
+        elif col == 'hour':
+            agg_dict[col] = 'max'  # Get the maximum hour for each patient
+        elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
+            agg_dict[col] = 'first'
+        elif df_filtered[col].dtype in ['float64', 'int64']:
+            agg_dict[col] = 'mean'  # Average clinical values across all hours
+        else:
+            agg_dict[col] = 'first'
+    
+    df_aggregated = df_filtered.groupby('stay_id').agg(agg_dict).reset_index()
+    print(f"After aggregation: {df_aggregated.shape[0]:,} rows (1 per patient)")
+    print(f"{'✓ MATCHES 5966!' if df_aggregated.shape[0] == 5966 else f'✗ Does not match 5966 (difference: {df_aggregated.shape[0] - 5966})'}")
+    print("="*80)
+    
+    # Use aggregated data
+    df = df_aggregated
     
     # Define columns to exclude (from TAME - less than 24H.ipynb notebook)
     exclude_cols = [
