@@ -958,7 +958,8 @@ def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24,
 def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7), 
                       n_init=10, max_iter=200, random_state=42,
                       output_dir='backend/output_dir/GBTM',
-                      filter_hours=None, patient_id_column='stay_id'):
+                      filter_hours=None, patient_id_column='stay_id',
+                      generate_plots=True):
     """
     Main function to run the complete GBTM pipeline.
     
@@ -1025,7 +1026,8 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
     df_with_phenotypes['gbtm_class'] = model.labels  # Add for validation charts
     
     # Generate all diagnostic plots (including clinical profile analysis and validation)
-    model.generate_all_plots(X_scaled, trajectory_cols, output_dir=output_dir, 
+    if generate_plots:
+        model.generate_all_plots(X_scaled, trajectory_cols, output_dir=output_dir, 
                             df_with_classes=df_with_phenotypes)
     
     # Print summary statistics
