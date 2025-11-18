@@ -104,7 +104,7 @@ def send_model_completed_email(to_email: str, to_name: str, run_id: int, model_t
                 <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button" style="color: white;">View Results</a>
                                 
                 <div class="footer">
-                    <p>This is an automated message from Model Training Platform</p>
+                    <p>This is an automated message from Phenosense</p>
                 </div>
             </div>
         </div>
@@ -126,7 +126,7 @@ def send_model_completed_email(to_email: str, to_name: str, run_id: int, model_t
     
     View your results at: {settings.FRONTEND_URL}/runs/{run_id}
     
-    This is an automated message from Model Training Platform
+    This is an automated message from Phenosense
     """
     
     return send_email(to_email, to_name, subject, html_content, text_content)
@@ -179,7 +179,7 @@ def send_clinician_review_email(to_email: str, to_name: str, run_id: int, data_s
                 <p style="margin-top: 20px;">Your expertise is valuable in validating these findings.</p>
                 
                 <div class="footer">
-                    <p>This is an automated message from Model Training Platform</p>
+                    <p>This is an automated message from Phenosense</p>
                 </div>
             </div>
         </div>
@@ -203,80 +203,7 @@ def send_clinician_review_email(to_email: str, to_name: str, run_id: int, data_s
     
     Your expertise is valuable in validating these findings.
     
-    This is an automated message from Model Training Platform
-    """
-    
-    return send_email(to_email, to_name, subject, html_content, text_content)
-
-def send_feedback_added_email(to_email: str, to_name: str, run_id: int, clinician_name: str):
-    """
-    Send notification to data scientist when clinician adds feedback
-    """
-    subject = f"Feedback Added to Run #{run_id}"
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-            .header {{ background: #27ae60; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
-            .content {{ background: #d4edda; padding: 30px; border-radius: 0 0 8px 8px; }}
-            .info-box {{ background: white; padding: 15px; margin: 15px 0; border-radius: 6px; border-left: 4px solid #27ae60; }}
-            .button {{ display: inline-block; padding: 12px 24px; background: #27ae60; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }}
-            .footer {{ text-align: center; margin-top: 20px; color: #7f8c8d; font-size: 12px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>New Feedback Received</h1>
-            </div>
-            <div class="content">
-                <p>Hello {to_name},</p>
-                
-                <p>Clinical feedback has been added to your model run.</p>
-                
-                <div class="info-box">
-                    <strong>Feedback Details:</strong><br>
-                    Run ID: #{run_id}<br>
-                    Feedback by: {clinician_name}<br>
-                    Status: Ready to review
-                </div>
-                
-                <p>The clinician has completed their review and added their feedback.</p>
-                
-                <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button">View Feedback</a>
-                
-                <p style="margin-top: 20px;">Review the feedback to improve your model training process.</p>
-                
-                <div class="footer">
-                    <p>This is an automated message from Model Training Platform</p>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    text_content = f"""
-    New Feedback Received
-    
-    Hello {to_name},
-    
-    Clinical feedback has been added to your model run.
-    
-    Feedback Details:
-    - Run ID: #{run_id}
-    - Feedback by: {clinician_name}
-    - Status: Ready to review
-    
-    View the feedback at: {settings.FRONTEND_URL}/runs/{run_id}
-    
-    Review the feedback to improve your model training process.
-    
-    This is an automated message from Model Training Platform
+    This is an automated message from Phenosense
     """
     
     return send_email(to_email, to_name, subject, html_content, text_content)
@@ -325,7 +252,7 @@ def send_model_failed_email(to_email: str, to_name: str, run_id: int, model_type
                 <a href="{settings.FRONTEND_URL}/runs/{run_id}" class="button" style="color: white;">View Details</a>
                 
                 <div class="footer">
-                    <p>This is an automated message from Model Training Platform</p>
+                    <p>This is an automated message from Phenosense</p>
                 </div>
             </div>
         </div>
@@ -349,7 +276,7 @@ def send_model_failed_email(to_email: str, to_name: str, run_id: int, model_type
     
     View details at: {settings.FRONTEND_URL}/runs/{run_id}
     
-    This is an automated message from Model Training Platform
+    This is an automated message from Phenosense
     """
     
     return send_email(to_email, to_name, subject, html_content, text_content)

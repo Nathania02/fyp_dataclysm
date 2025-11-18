@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
@@ -20,7 +20,7 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr = Field(..., min_length=1)
     password: str
     role: UserRole
 
@@ -38,7 +38,6 @@ class UserResponse(BaseModel):
     role: str
     created_at: str
 
-# note: can possibly remove
 class ModelRunCreate(BaseModel):
     model_type: ModelType
     dataset_name: str
