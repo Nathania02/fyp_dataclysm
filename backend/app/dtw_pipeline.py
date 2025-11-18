@@ -657,22 +657,3 @@ def run_kmeans_dtw_pipeline(
         'k_evaluation': k_evaluation_df,
         'distance_matrix_path': str(dtw_path)
     }
-
-
-if __name__ == "__main__":
-    results = run_kmeans_dtw_pipeline(
-        db_path="fixed_hour_length_issue_BRITSSAITS_10112025.duckdb", # using the fixed dataset
-        time_window_hours=24, # by default the time frame will be 24, but can change
-        output_dir="output_24h_full", # results
-        manual_k=None,
-        k_range=(2, 8),
-        subsample_fraction=0.01  # by default using 0.01 for demo only 
-    )
-    
-    # results_demo = run_sepsis_phenotyping_pipeline(
-    #     db_path="fixed_hour_length_issue_BRITSSAITS_10112025.duckdb",
-    #     time_window_hours=24,
-    #     output_dir="output_24h_demo",
-    #     manual_k=3,
-    #     subsample_fraction=0.01  # 1% of patients for fast demo
-    # )

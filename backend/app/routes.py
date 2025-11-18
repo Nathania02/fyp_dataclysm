@@ -160,8 +160,8 @@ async def get_runs(current_user: dict = Depends(get_current_user)):
 @router.get("/runs/{run_id}", response_model=ModelRunResponse)
 async def get_run(run_id: int, current_user: dict = Depends(get_current_user)):
     run = RunStorage.get_by_id(run_id)
-    # if not run or run['user_id'] != current_user['id']:
-    #     raise HTTPException(status_code=404, detail="Run not found")
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
     
     # Check task status if running
     if run['status'] == 'running' and run['celery_task_id']:

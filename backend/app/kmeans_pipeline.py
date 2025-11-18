@@ -660,7 +660,7 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
                            n_iterations=100, subsample_fraction=0.8,
                            correlation_threshold=0.8, log_transform=False,
                            subsample_data=None, output_dir='results',
-                           manual_k=None, random_state=42, ):
+                           manual_k=None, random_state=42, generate_plots=True):
     """
     Main function to run the complete consensus k-means pipeline.
     
@@ -676,6 +676,7 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
         output_dir: Directory to save results
         manual_k: Manually specify optimal k (None = auto-select)
         random_state: Random seed
+        generate_plots: Whether to generate diagnostic plots (default: True)
         
     Returns:
         dict: Dictionary containing:
@@ -741,8 +742,9 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     df_with_phenotypes = df_transformed.copy()
     df_with_phenotypes['phenotype'] = model.labels
     
-    # Generate all diagnostic plots
-    model.generate_all_plots(X_processed, output_dir=output_dir)
+    # Generate all diagnostic plots (skip if generate_plots=False)
+    if generate_plots:
+        model.generate_all_plots(X_processed, output_dir=output_dir)
     
     # Print summary statistics
     print("\n" + "="*80)
@@ -751,6 +753,10 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     print(f"\nOptimal k: {optimal_k}")
     print(f"\nPhenotype sizes:")
     print(df_with_phenotypes['phenotype'].value_counts().sort_index())
+    
+    # Calculate silhouette score
+    from sklearn.metrics import silhouette_score
+    silhouette = silhouette_score(X_processed, model.labels)
     
     # Return results
     results = {
@@ -782,44 +788,3 @@ def run_consensus_pipeline(df, exclude_cols, k_range=range(2, 7),
     
     print("Results", results)
     return results
-
-
-
-# Example usage
-if __name__ == "__main__":
-    """
-    Example of how to use the pipeline
-    """
-    
-    # Example 1: Basic usage with DuckDB
-    # import duckdb
-    df = data_loader_duckdb('../../data/final_imputed_output_26102025.duckdb', 'final_imputed_output_26102025')
-
-    # Example 2: Using the pipeline
-    results = run_consensus_pipeline(
-        df=df,
-        exclude_cols=['stay_id', 'hour', 'model', 'all_icd_codes', 
-                      'all_icd_versions', 'is_sepsis', 'sofa_total'],
-        # folder_path='your_folder_path',
-        k_range=range(2, 7),
-        n_iterations=100,
-        correlation_threshold=0.8,
-        log_transform=False,
-        subsample_fraction=0.8,
-        subsample_data=0.02,  # Use 2% of data
-        output_dir='testing',
-        manual_k=4,
-        random_state=42
-    )
-    
-    # Example 3: Access results
-    model = results['model']
-    df_phenotypes = results['df_with_phenotypes']
-    optimal_k = results['optimal_k']
-    labels = results['labels']
-    
-    # Example 4: Generate additional analysis
-    feature_names = results['feature_names']
-    phenotype_profiles = df_phenotypes.groupby('phenotype')[feature_names].mean()
-    print(phenotype_profiles)
-    pass
