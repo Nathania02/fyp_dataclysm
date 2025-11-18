@@ -5,7 +5,7 @@
         <!-- Sign In Form -->
         <form @submit.prevent="handleLogin" class="sign-in-form">
           <h2 class="form-title">Sign In</h2>
-          <p class="form-subtitle">Welcome back to the Model Training Platform</p>
+          <p class="form-subtitle">Welcome back to Phenosense</p>
           
           <div v-if="loginError" class="error-message">
             <i class="fas fa-exclamation-circle" style="padding-left: 30%;"></i>

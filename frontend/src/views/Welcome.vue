@@ -7,7 +7,7 @@
       <div class="hero-overlay"></div>
       <div class="hero-content">
         <h1 class="hero-title">
-          Welcome to <span class="highlight">Model Training Platform</span>
+          Welcome to <span class="highlight">Phenosense</span>
         </h1>
         <p class="hero-subtitle">
           Collaborative Model Training Platform for Sepsis Phenotyping
