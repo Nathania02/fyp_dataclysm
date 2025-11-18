@@ -1107,7 +1107,7 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
                      correlation_threshold=0.8, log_transform=False,
                      subsample_data=None, output_dir='backend/output_dir/LCA',
                      manual_k=None, selection_method='composite', 
-                     random_state=None):
+                     random_state=None, filter_hours=None, patient_id_column='stay_id'):
     """
     Main function to run the complete Latent Class Analysis pipeline using StepMix.
     
@@ -1124,6 +1124,9 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
         manual_k: Manually specify optimal k (None = auto-select)
         selection_method: Method for selecting k ('composite', 'bic', 'aic', or 'manual')
         random_state: Random seed (None = try multiple random initializations, recommended)
+        filter_hours: If provided, filter to patients with >= this many hours (e.g., 24)
+                     If None, use all patients without filtering
+        patient_id_column: Column name for patient ID (default: 'stay_id')
         
     Returns:
         dict: Dictionary containing:
@@ -1131,6 +1134,64 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
             - labels: Class assignments
             - probabilities: Class membership probabilities
     """
+    
+    # Filter and aggregate patients to one row per patient
+    def filter_and_aggregate_patients(df, patient_id_column='stay_id', min_hours=24):
+        """
+        Filter patients by minimum hour count and aggregate to one row per patient.
+        
+        Args:
+            df: Input dataframe
+            patient_id_column: Column name for patient ID
+            min_hours: Minimum hours threshold for filtering
+        
+        Returns:
+            Aggregated dataframe with one row per patient
+        """
+        print("\n" + "="*80)
+        print(f"FILTERING PATIENTS WITH >={min_hours} HOURS")
+        print("="*80)
+        print(f"\nInitial data shape: {df.shape}")
+        print(f"Number of unique patients: {df[patient_id_column].nunique():,}")
+        
+        # Step 1: Count hours per patient to identify those with >= min_hours
+        print(f"\nStep 1: Identifying patients with >={min_hours} hours of data...")
+        patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
+        patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] >= min_hours][patient_id_column]
+        
+        print(f"Patients with <{min_hours} hours: {len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours]):,} ({len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours])/len(patient_hour_counts)*100:.2f}%)")
+        print(f"Patients with >={min_hours} hours: {len(patients_filtered):,} ({len(patients_filtered)/len(patient_hour_counts)*100:.2f}%)")
+        
+        # Step 2: Filter to only include patients with >= min_hours
+        df_filtered = df[df[patient_id_column].isin(patients_filtered)].copy()
+        print(f"\nStep 2: Filtering to patients with >={min_hours} hours...")
+        print(f"After filtering: {df_filtered.shape[0]:,} rows")
+        
+        # Step 3: AGGREGATE to 1 row per patient
+        print(f"\nStep 3: Aggregating to 1 row per patient...")
+        agg_dict = {}
+        for col in df_filtered.columns:
+            if col == patient_id_column:
+                continue
+            elif col in ['hour', 'chart_hour']:
+                agg_dict[col] = 'max'  # Get the maximum hour for each patient
+            elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
+                agg_dict[col] = 'first'
+            elif df_filtered[col].dtype in ['float64', 'int64']:
+                agg_dict[col] = 'mean'  # Average clinical values across all hours
+            else:
+                agg_dict[col] = 'first'
+        
+        df_aggregated = df_filtered.groupby(patient_id_column).agg(agg_dict).reset_index()
+        print(f"After aggregation: {df_aggregated.shape[0]:,} rows (1 per patient)")
+        print("="*80)
+        
+        return df_aggregated
+    
+    # Apply filtering and aggregation if filter_hours is specified
+    if filter_hours is not None:
+        df = filter_and_aggregate_patients(df, patient_id_column, min_hours=filter_hours)
+    
     print("\n" + "="*80)
     print("LATENT CLASS ANALYSIS (LCA) PIPELINE - STEPMIX")
     print("="*80)
@@ -1322,86 +1383,3 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
     print("  - probabilities: Class membership probabilities")
     
     return results
-
-
-# Example usage
-if __name__ == "__main__":
-    """
-    Example of how to use the LCA pipeline
-    """
-    
-    # Load data from DuckDB - fixed_hour_length (the one from your notebook)
-    df = data_loader_duckdb(
-        '../../data/fixed_hour_length_issue_BRITSSAITS_10112025.duckdb',
-        'clipped_brits_saits'
-    )
-    
-    print("\n" + "="*80)
-    print("FILTERING PATIENTS WITH >24 HOURS (FROM NOTEBOOK)")
-    print("="*80)
-    print(f"\nInitial data shape: {df.shape}")
-    print(f"Number of unique patients: {df['stay_id'].nunique():,}")
-    
-    # Step 1: Count hours per patient to identify those with >=24 hours (corrected)
-    print("\nStep 1: Identifying patients with >=24 hours of data...")
-    patient_hour_counts = df.groupby('stay_id').size().reset_index(name='n_hours')
-    patients_gte24h = patient_hour_counts[patient_hour_counts['n_hours'] >= 24]['stay_id']
-    
-    print(f"Patients with <24 hours: {len(patient_hour_counts[patient_hour_counts['n_hours'] < 24]):,} ({len(patient_hour_counts[patient_hour_counts['n_hours'] < 24])/len(patient_hour_counts)*100:.2f}%)")
-    print(f"Patients with >=24 hours: {len(patients_gte24h):,} ({len(patients_gte24h)/len(patient_hour_counts)*100:.2f}%)")
-    
-    # Step 2: Filter to only include patients with >=24 hours
-    df_filtered = df[df['stay_id'].isin(patients_gte24h)].copy()
-    print(f"\nStep 2: Filtering to patients with >=24 hours...")
-    print(f"After filtering: {df_filtered.shape[0]:,} rows")
-    
-    # Step 3: AGGREGATE to 1 row per patient (like GBTM does)
-    print("\nStep 3: Aggregating to 1 row per patient (GBTM-style)...")
-    agg_dict = {}
-    for col in df_filtered.columns:
-        if col == 'stay_id':
-            continue
-        elif col == 'hour':
-            agg_dict[col] = 'max'  # Get the maximum hour for each patient
-        elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
-            agg_dict[col] = 'first'
-        elif df_filtered[col].dtype in ['float64', 'int64']:
-            agg_dict[col] = 'mean'  # Average clinical values across all hours
-        else:
-            agg_dict[col] = 'first'
-    
-    df_aggregated = df_filtered.groupby('stay_id').agg(agg_dict).reset_index()
-    print(f"After aggregation: {df_aggregated.shape[0]:,} rows (1 per patient)")
-    print(f"{'✓ MATCHES 5966!' if df_aggregated.shape[0] == 5966 else f'✗ Does not match 5966 (difference: {df_aggregated.shape[0] - 5966})'}")
-    print("="*80)
-    
-    # Use aggregated data
-    df = df_aggregated
-    
-    # Define columns to exclude (from TAME - less than 24H.ipynb notebook)
-    exclude_cols = [
-        'stay_id', 'hour', 'chart_hour', 'sofa_total', 'sofa_cat', 
-        'age_at_admission', 'phenotype', 'model', 
-        'all_icd_codes', 'all_icd_versions', 'is_sepsis'
-    ]
-    
-    # Run the LCA pipeline
-    results = run_lca_pipeline(
-        df=df,
-        exclude_cols=exclude_cols,
-        k_range=range(2, 7),
-        n_init=10,
-        max_iter=200,
-        correlation_threshold=0.8,
-        log_transform=False,
-        subsample_data=None,  # Use full dataset
-        output_dir='backend/output_dir/LCA_fixed_hour_length',
-        manual_k=None,  # Set to specific k value to skip automatic selection
-        selection_method='composite',  # Use 7-metric composite scoring
-        random_state=42
-    )
-    
-    # Access results
-    print(f"\nOptimal k: {results['optimal_k']}")
-    print(f"Labels shape: {results['labels'].shape}")
-    print(f"Probabilities shape: {results['probabilities'].shape}")

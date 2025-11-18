@@ -903,7 +903,8 @@ def data_loader_duckdb(db_path, table_name):
 
 def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7), 
                       n_init=10, max_iter=200, random_state=42,
-                      output_dir='backend/output_dir/GBTM'):
+                      output_dir='backend/output_dir/GBTM',
+                      filter_hours=None, patient_id_column='stay_id'):
     """
     Main function to run the complete GBTM pipeline.
     
@@ -916,6 +917,9 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
         max_iter: Maximum EM iterations
         random_state: Random seed
         output_dir: Directory to save results
+        filter_hours: If provided, filter to patients with ≤ this many hours (e.g., 24)
+                     If None, use all patients without filtering
+        patient_id_column: Column name for patient ID (default: 'stay_id')
         
     Returns:
         dict: Dictionary containing:
@@ -923,6 +927,70 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
             - labels: Class assignments
             - probabilities: Class membership probabilities
     """
+    
+    # Filter and aggregate patients to one row per patient
+    def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24, filter_enabled=True):
+        """
+        Dynamically filter patients by hour count and aggregate to one row per patient.
+        
+        Args:
+            df: Input dataframe
+            patient_id_column: Column name for patient ID
+            max_hours: Maximum hours threshold for filtering (if filter_enabled=True)
+            filter_enabled: If False, skip filtering and aggregate all patients
+        
+        Returns:
+            Aggregated dataframe with one row per patient
+        """
+        print(f"\nInitial data shape: {df.shape}")
+        print(f"Number of unique patients: {df[patient_id_column].nunique()}")
+        
+        # Check hour distribution
+        patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
+        print(f"\nPatient hour distribution:")
+        print(f"  Min: {patient_hour_counts['n_hours'].min()}")
+        print(f"  Max: {patient_hour_counts['n_hours'].max()}")
+        print(f"  Mean: {patient_hour_counts['n_hours'].mean():.1f}")
+        print(f"  Median: {patient_hour_counts['n_hours'].median():.1f}")
+        
+        # Dynamic filtering
+        if filter_enabled:
+            patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] <= max_hours][patient_id_column]
+            print(f"\nPatients with ≤{max_hours}h: {len(patients_filtered)} ({len(patients_filtered)/len(patient_hour_counts)*100:.1f}%)")
+            
+            if len(patients_filtered) == 0:
+                print(f"  ⚠ WARNING: No patients with ≤{max_hours}h found. Using all patients instead.")
+                df_temp = df.copy()
+            else:
+                df_temp = df[df[patient_id_column].isin(patients_filtered)].copy()
+                print(f"  ✓ Filtering applied: {len(patients_filtered)} patients selected")
+        else:
+            print(f"\n  Using all {len(patient_hour_counts)} patients (filtering disabled)")
+            df_temp = df.copy()
+        
+        # Aggregate to one row per patient
+        agg_dict = {}
+        for col in df_temp.columns:
+            if col == patient_id_column:
+                continue
+            elif col in ['hour', 'chart_hour']:
+                agg_dict[col] = 'max'
+            elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
+                agg_dict[col] = 'first'
+            elif df_temp[col].dtype in ['float64', 'int64']:
+                agg_dict[col] = 'mean'
+            else:
+                agg_dict[col] = 'first'
+        
+        df_aggregated = df_temp.groupby(patient_id_column).agg(agg_dict).reset_index()
+        print(f"\nAggregated data shape: {df_aggregated.shape}")
+        
+        return df_aggregated
+    
+    # Apply filtering and aggregation if filter_hours is specified
+    if filter_hours is not None:
+        df = filter_and_aggregate_patients(df, patient_id_column, max_hours=filter_hours, filter_enabled=True)
+    
     print("\n" + "="*80)
     print("GROUP-BASED TRAJECTORY MODELING (GBTM) PIPELINE")
     print("="*80)
@@ -1081,117 +1149,3 @@ def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24,
     print(f"\nAggregated data shape: {df_aggregated.shape}")
     
     return df_aggregated
-
-
-# Example usage
-if __name__ == "__main__":
-    """
-    Example of how to use the GBTM pipeline with all 3 datasets
-    """
-    
-    print("\n" + "="*80)
-    print("TESTING GBTM PIPELINE WITH ALL 3 DATASETS")
-    print("="*80)
-    
-    results_summary = []
-    
-    # ============================================================
-    # Dataset 1: fixed_hour_length_issue_BRITSSAITS_10112025.duckdb
-    # Expected: Patients with ≤24h data
-    # ============================================================
-    print("\n" + "="*80)
-    print("DATASET 1: fixed_hour_length_issue_BRITSSAITS_10112025.duckdb")
-    print("="*80)
-    
-    df1 = data_loader_duckdb('../../data/fixed_hour_length_issue_BRITSSAITS_10112025.duckdb', 'clipped_brits_saits')
-    df1_agg = filter_and_aggregate_patients(df1, max_hours=24, filter_enabled=True)
-    
-    if len(df1_agg) > 0:
-        results1 = run_gbtm_pipeline(
-            df=df1_agg,
-            exclude_cols=['stay_id', 'hour', 'chart_hour', 'sofa_total', 'age_at_admission', 'model', 
-                          'all_icd_codes', 'all_icd_versions', 'is_sepsis', 'phenotype', 'sofa_cat'],
-            db_name='fixed_hour_length',
-            k_range=range(2, 7),
-            n_init=10,
-            max_iter=200,
-            random_state=42,
-            output_dir='backend/output_dir/GBTM/fixed_hour_length'
-        )
-        print(f"\n✓ Dataset 1 Result: k={results1['optimal_k']}")
-        results_summary.append(('fixed_hour_length', results1['optimal_k'], len(df1_agg)))
-    else:
-        print("\n✗ Dataset 1 skipped: No data after filtering")
-        results_summary.append(('fixed_hour_length', 'N/A', 0))
-    
-    # ============================================================
-    # Dataset 2: consensus_clustering_results_updated.duckdb
-    # Using ALL 7832 rows (no filtering, no aggregation)
-    # ============================================================
-    print("\n\n" + "="*80)
-    print("DATASET 2: consensus_clustering_results_updated.duckdb")
-    print("="*80)
-    
-    df2 = data_loader_duckdb('../../data/consensus_clustering_results_updated.duckdb', 'df_subset')
-    # Use all 7832 rows directly without filtering or aggregation
-    df2_agg = df2.copy()
-    print(f"\nUsing ALL {len(df2_agg)} rows (no filtering, no aggregation)")
-    print(f"Data shape: {df2_agg.shape}")
-    
-    if len(df2_agg) > 0:
-        results2 = run_gbtm_pipeline(
-            df=df2_agg,
-            exclude_cols=['stay_id', 'hour', 'chart_hour', 'sofa_total', 'age_at_admission', 'model',
-                          'all_icd_codes', 'all_icd_versions', 'is_sepsis', 'phenotype', 'sofa_cat'],
-            db_name='consensus_clustering',
-            k_range=range(2, 7),
-            n_init=10,
-            max_iter=200,
-            random_state=42,
-            output_dir='backend/output_dir/GBTM/consensus_clustering'
-        )
-        print(f"\n✓ Dataset 2 Result: k={results2['optimal_k']}")
-        results_summary.append(('consensus_clustering', results2['optimal_k'], len(df2_agg)))
-    else:
-        print("\n✗ Dataset 2 skipped: No data after filtering")
-        results_summary.append(('consensus_clustering', 'N/A', 0))
-    
-    # ============================================================
-    # Dataset 3: final_imputed_output_26102025.duckdb
-    # Note: All patients have 72h data, so will use all patients
-    # ============================================================
-    print("\n\n" + "="*80)
-    print("DATASET 3: final_imputed_output_26102025.duckdb")
-    print("="*80)
-    
-    df3 = data_loader_duckdb('../../data/final_imputed_output_26102025.duckdb', 'final_imputed_output_26102025')
-    df3_agg = filter_and_aggregate_patients(df3, max_hours=24, filter_enabled=True)
-    
-    if len(df3_agg) > 0:
-        results3 = run_gbtm_pipeline(
-            df=df3_agg,
-            exclude_cols=['stay_id', 'hour', 'chart_hour', 'sofa_total', 'age_at_admission', 'model', 
-                          'all_icd_codes', 'all_icd_versions', 'is_sepsis', 'phenotype', 'sofa_cat'],
-            db_name='final_imputed_output',
-            k_range=range(2, 7),
-            n_init=10,
-            max_iter=200,
-            random_state=42,
-            output_dir='backend/output_dir/GBTM/final_imputed_output'
-        )
-        print(f"\n✓ Dataset 3 Result: k={results3['optimal_k']}")
-        results_summary.append(('final_imputed_output', results3['optimal_k'], len(df3_agg)))
-    else:
-        print("\n✗ Dataset 3 skipped: No data after filtering")
-        results_summary.append(('final_imputed_output', 'N/A', 0))
-    
-    # ============================================================
-    # Final Summary
-    # ============================================================
-    print("\n\n" + "="*80)
-    print("FINAL SUMMARY - ALL DATASETS")
-    print("="*80)
-    print(f"\n{'Dataset':<30} {'Optimal k':<12} {'Patients':<10}")
-    print("-" * 52)
-    for dataset_name, optimal_k, n_patients in results_summary:
-        print(f"{dataset_name:<30} {str(optimal_k):<12} {n_patients:<10}")
