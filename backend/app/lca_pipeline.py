@@ -14,6 +14,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from scipy import stats
+from scipy.stats import f_oneway, chi2_contingency
 from pathlib import Path
 from tqdm import tqdm
 import warnings
@@ -889,8 +890,6 @@ class LatentClassAnalysis:
             df_with_classes: DataFrame with lca_class and sofa_total columns
             save_path: Path to save the figure
         """
-        from scipy.stats import f_oneway
-        
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         
         # Prepare data
@@ -942,8 +941,6 @@ class LatentClassAnalysis:
             df_with_classes: DataFrame with lca_class and sofa_total columns
             save_path: Path to save the figure
         """
-        from scipy.stats import chi2_contingency
-        
         # Calculate high SOFA rate (SOFA >= 10 is associated with higher mortality)
         df_with_classes['high_sofa'] = (df_with_classes['sofa_total'] >= 10).astype(int)
         
@@ -1102,6 +1099,59 @@ def data_loader_duckdb(db_path, table_name):
     return df
 
 
+def filter_and_aggregate_patients(df, patient_id_column='stay_id', min_hours=24):
+    """
+    Filter patients by minimum hour count and aggregate to one row per patient.
+    
+    Args:
+        df: Input dataframe
+        patient_id_column: Column name for patient ID
+        min_hours: Minimum hours threshold for filtering
+    
+    Returns:
+        Aggregated dataframe with one row per patient
+    """
+    print("\n" + "="*80)
+    print(f"FILTERING PATIENTS WITH >={min_hours} HOURS")
+    print("="*80)
+    print(f"\nInitial data shape: {df.shape}")
+    print(f"Number of unique patients: {df[patient_id_column].nunique():,}")
+    
+    # Step 1: Count hours per patient to identify those with >= min_hours
+    print(f"\nStep 1: Identifying patients with >={min_hours} hours of data...")
+    patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
+    patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] >= min_hours][patient_id_column]
+    
+    print(f"Patients with <{min_hours} hours: {len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours]):,} ({len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours])/len(patient_hour_counts)*100:.2f}%)")
+    print(f"Patients with >={min_hours} hours: {len(patients_filtered):,} ({len(patients_filtered)/len(patient_hour_counts)*100:.2f}%)")
+    
+    # Step 2: Filter to only include patients with >= min_hours
+    df_filtered = df[df[patient_id_column].isin(patients_filtered)].copy()
+    print(f"\nStep 2: Filtering to patients with >={min_hours} hours...")
+    print(f"After filtering: {df_filtered.shape[0]:,} rows")
+    
+    # Step 3: AGGREGATE to 1 row per patient
+    print(f"\nStep 3: Aggregating to 1 row per patient...")
+    agg_dict = {}
+    for col in df_filtered.columns:
+        if col == patient_id_column:
+            continue
+        elif col in ['hour', 'chart_hour']:
+            agg_dict[col] = 'max'  # Get the maximum hour for each patient
+        elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
+            agg_dict[col] = 'first'
+        elif df_filtered[col].dtype in ['float64', 'int64']:
+            agg_dict[col] = 'mean'  # Average clinical values across all hours
+        else:
+            agg_dict[col] = 'first'
+    
+    df_aggregated = df_filtered.groupby(patient_id_column).agg(agg_dict).reset_index()
+    print(f"After aggregation: {df_aggregated.shape[0]:,} rows (1 per patient)")
+    print("="*80)
+    
+    return df_aggregated
+
+
 def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
                      n_init=50, max_iter=200,
                      correlation_threshold=0.8, log_transform=False,
@@ -1134,59 +1184,6 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
             - labels: Class assignments
             - probabilities: Class membership probabilities
     """
-    
-    # Filter and aggregate patients to one row per patient
-    def filter_and_aggregate_patients(df, patient_id_column='stay_id', min_hours=24):
-        """
-        Filter patients by minimum hour count and aggregate to one row per patient.
-        
-        Args:
-            df: Input dataframe
-            patient_id_column: Column name for patient ID
-            min_hours: Minimum hours threshold for filtering
-        
-        Returns:
-            Aggregated dataframe with one row per patient
-        """
-        print("\n" + "="*80)
-        print(f"FILTERING PATIENTS WITH >={min_hours} HOURS")
-        print("="*80)
-        print(f"\nInitial data shape: {df.shape}")
-        print(f"Number of unique patients: {df[patient_id_column].nunique():,}")
-        
-        # Step 1: Count hours per patient to identify those with >= min_hours
-        print(f"\nStep 1: Identifying patients with >={min_hours} hours of data...")
-        patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
-        patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] >= min_hours][patient_id_column]
-        
-        print(f"Patients with <{min_hours} hours: {len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours]):,} ({len(patient_hour_counts[patient_hour_counts['n_hours'] < min_hours])/len(patient_hour_counts)*100:.2f}%)")
-        print(f"Patients with >={min_hours} hours: {len(patients_filtered):,} ({len(patients_filtered)/len(patient_hour_counts)*100:.2f}%)")
-        
-        # Step 2: Filter to only include patients with >= min_hours
-        df_filtered = df[df[patient_id_column].isin(patients_filtered)].copy()
-        print(f"\nStep 2: Filtering to patients with >={min_hours} hours...")
-        print(f"After filtering: {df_filtered.shape[0]:,} rows")
-        
-        # Step 3: AGGREGATE to 1 row per patient
-        print(f"\nStep 3: Aggregating to 1 row per patient...")
-        agg_dict = {}
-        for col in df_filtered.columns:
-            if col == patient_id_column:
-                continue
-            elif col in ['hour', 'chart_hour']:
-                agg_dict[col] = 'max'  # Get the maximum hour for each patient
-            elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
-                agg_dict[col] = 'first'
-            elif df_filtered[col].dtype in ['float64', 'int64']:
-                agg_dict[col] = 'mean'  # Average clinical values across all hours
-            else:
-                agg_dict[col] = 'first'
-        
-        df_aggregated = df_filtered.groupby(patient_id_column).agg(agg_dict).reset_index()
-        print(f"After aggregation: {df_aggregated.shape[0]:,} rows (1 per patient)")
-        print("="*80)
-        
-        return df_aggregated
     
     # Apply filtering and aggregation if filter_hours is specified
     if filter_hours is not None:
@@ -1252,78 +1249,6 @@ def run_lca_pipeline(df, exclude_cols, k_range=range(2, 7),
                             output_dir=output_dir, 
                             include_clinical_profiles=True,
                             df_with_classes=df_with_classes)
-    
-    # If optimal k is not 4, generate k=4 results as well
-    if optimal_k != 4 and 4 in model.models:
-        print("\n" + "="*80)
-        print("GENERATING ADDITIONAL RESULTS FOR k=4")
-        print("="*80)
-        print(f"Note: Optimal k={optimal_k}, but also generating k=4 results as requested")
-        
-        # Temporarily switch to k=4 model
-        original_optimal_k = model.optimal_k
-        original_optimal_model = model.optimal_model
-        original_labels = model.labels
-        original_probabilities = model.probabilities
-        
-        model.optimal_k = 4
-        model.optimal_model = model.models[4]
-        labels_k4, probabilities_k4 = model.predict(X_processed)
-        
-        # Create separate output directory for k=4
-        output_path_k4 = Path(output_dir) / 'k4_results'
-        output_path_k4.mkdir(parents=True, exist_ok=True)
-        
-        # Save k=4 results
-        df_with_classes_k4 = df_transformed.copy()
-        df_with_classes_k4['lca_class'] = labels_k4
-        for i in range(4):
-            df_with_classes_k4[f'prob_class_{i}'] = probabilities_k4[:, i]
-        
-        # Generate plots for k=4 with clinical profile analysis and validation charts
-        model.generate_all_plots(X_processed, feature_names=feature_names, 
-                                output_dir=str(output_path_k4), 
-                                include_clinical_profiles=True,
-                                df_with_classes=df_with_classes_k4)
-        
-        results_file_k4 = output_path_k4 / 'lca_results_k4.csv'
-        df_with_classes_k4.to_csv(results_file_k4, index=False)
-        print(f"k=4 results saved to: {results_file_k4}")
-        
-        # Save k=4 summary
-        summary_file_k4 = output_path_k4 / 'lca_summary_k4.txt'
-        with open(summary_file_k4, 'w') as f:
-            f.write("="*80 + "\n")
-            f.write("LATENT CLASS ANALYSIS SUMMARY (k=4 RESULTS)\n")
-            f.write("="*80 + "\n\n")
-            f.write(f"Number of classes: 4 (forced, optimal was {original_optimal_k})\n")
-            f.write(f"Selection method: {selection_method}\n\n")
-            f.write("Class sizes:\n")
-            f.write(df_with_classes_k4['lca_class'].value_counts().sort_index().to_string())
-            f.write("\n\n")
-            f.write("Class proportions:\n")
-            f.write((df_with_classes_k4['lca_class'].value_counts(normalize=True).sort_index() * 100).to_string())
-            f.write("\n\n")
-            if 4 in model.metrics:
-                f.write("Model metrics for k=4:\n")
-                for metric, value in model.metrics[4].items():
-                    f.write(f"  {metric}: {value:.4f}\n")
-        
-        print(f"k=4 summary saved to: {summary_file_k4}")
-        print(f"\nk=4 class sizes:")
-        print(df_with_classes_k4['lca_class'].value_counts().sort_index())
-        print(f"\nk=4 class proportions (%):")
-        print((df_with_classes_k4['lca_class'].value_counts(normalize=True).sort_index() * 100).round(2))
-        
-        # Restore original optimal model
-        model.optimal_k = original_optimal_k
-        model.optimal_model = original_optimal_model
-        model.labels = original_labels
-        model.probabilities = original_probabilities
-        
-        print(f"\n✓ Generated both optimal k={original_optimal_k} and k=4 results")
-    elif optimal_k == 4:
-        print("\n✓ Optimal k is already 4, no additional results needed")
     
     # Save results to CSV
     output_path = Path(output_dir)

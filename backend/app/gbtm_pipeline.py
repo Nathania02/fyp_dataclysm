@@ -24,6 +24,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
 from sklearn.impute import SimpleImputer
+from scipy.stats import f_oneway, chi2_contingency
 from pathlib import Path
 from tqdm import tqdm
 import warnings
@@ -703,8 +704,6 @@ class GroupBasedTrajectoryModel:
             df_with_classes: DataFrame with gbtm_class and sofa_total columns
             save_path: Path to save the figure
         """
-        from scipy.stats import f_oneway
-        
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         
         # Prepare data
@@ -756,8 +755,6 @@ class GroupBasedTrajectoryModel:
             df_with_classes: DataFrame with gbtm_class and sofa_total columns
             save_path: Path to save the figure
         """
-        from scipy.stats import chi2_contingency
-        
         # Calculate high SOFA rate (SOFA >= 10 is associated with higher mortality)
         df_with_classes['high_sofa'] = (df_with_classes['sofa_total'] >= 10).astype(int)
         
@@ -900,6 +897,63 @@ def data_loader_duckdb(db_path, table_name):
     conn.close()
     return df
 
+def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24, filter_enabled=True):
+    """
+    Dynamically filter patients by hour count and aggregate to one row per patient.
+    
+    Args:
+        df: Input dataframe
+        patient_id_column: Column name for patient ID
+        max_hours: Maximum hours threshold for filtering (if filter_enabled=True)
+        filter_enabled: If False, skip filtering and aggregate all patients
+    
+    Returns:
+        Aggregated dataframe with one row per patient
+    """
+    print(f"\nInitial data shape: {df.shape}")
+    print(f"Number of unique patients: {df[patient_id_column].nunique()}")
+    
+    # Check hour distribution
+    patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
+    print(f"\nPatient hour distribution:")
+    print(f"  Min: {patient_hour_counts['n_hours'].min()}")
+    print(f"  Max: {patient_hour_counts['n_hours'].max()}")
+    print(f"  Mean: {patient_hour_counts['n_hours'].mean():.1f}")
+    print(f"  Median: {patient_hour_counts['n_hours'].median():.1f}")
+    
+    # Dynamic filtering
+    if filter_enabled:
+        patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] <= max_hours][patient_id_column]
+        print(f"\nPatients with ≤{max_hours}h: {len(patients_filtered)} ({len(patients_filtered)/len(patient_hour_counts)*100:.1f}%)")
+        
+        if len(patients_filtered) == 0:
+            print(f"  ⚠ WARNING: No patients with ≤{max_hours}h found. Using all patients instead.")
+            df_temp = df.copy()
+        else:
+            df_temp = df[df[patient_id_column].isin(patients_filtered)].copy()
+            print(f"  ✓ Filtering applied: {len(patients_filtered)} patients selected")
+    else:
+        print(f"\n  Using all {len(patient_hour_counts)} patients (filtering disabled)")
+        df_temp = df.copy()
+    
+    # Aggregate to one row per patient
+    agg_dict = {}
+    for col in df_temp.columns:
+        if col == patient_id_column:
+            continue
+        elif col in ['hour', 'chart_hour']:
+            agg_dict[col] = 'max'
+        elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
+            agg_dict[col] = 'first'
+        elif df_temp[col].dtype in ['float64', 'int64']:
+            agg_dict[col] = 'mean'
+        else:
+            agg_dict[col] = 'first'
+    
+    df_aggregated = df_temp.groupby(patient_id_column).agg(agg_dict).reset_index()
+    print(f"\nAggregated data shape: {df_aggregated.shape}")
+    
+    return df_aggregated
 
 def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7), 
                       n_init=10, max_iter=200, random_state=42,
@@ -927,65 +981,6 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
             - labels: Class assignments
             - probabilities: Class membership probabilities
     """
-    
-    # Filter and aggregate patients to one row per patient
-    def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24, filter_enabled=True):
-        """
-        Dynamically filter patients by hour count and aggregate to one row per patient.
-        
-        Args:
-            df: Input dataframe
-            patient_id_column: Column name for patient ID
-            max_hours: Maximum hours threshold for filtering (if filter_enabled=True)
-            filter_enabled: If False, skip filtering and aggregate all patients
-        
-        Returns:
-            Aggregated dataframe with one row per patient
-        """
-        print(f"\nInitial data shape: {df.shape}")
-        print(f"Number of unique patients: {df[patient_id_column].nunique()}")
-        
-        # Check hour distribution
-        patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
-        print(f"\nPatient hour distribution:")
-        print(f"  Min: {patient_hour_counts['n_hours'].min()}")
-        print(f"  Max: {patient_hour_counts['n_hours'].max()}")
-        print(f"  Mean: {patient_hour_counts['n_hours'].mean():.1f}")
-        print(f"  Median: {patient_hour_counts['n_hours'].median():.1f}")
-        
-        # Dynamic filtering
-        if filter_enabled:
-            patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] <= max_hours][patient_id_column]
-            print(f"\nPatients with ≤{max_hours}h: {len(patients_filtered)} ({len(patients_filtered)/len(patient_hour_counts)*100:.1f}%)")
-            
-            if len(patients_filtered) == 0:
-                print(f"  ⚠ WARNING: No patients with ≤{max_hours}h found. Using all patients instead.")
-                df_temp = df.copy()
-            else:
-                df_temp = df[df[patient_id_column].isin(patients_filtered)].copy()
-                print(f"  ✓ Filtering applied: {len(patients_filtered)} patients selected")
-        else:
-            print(f"\n  Using all {len(patient_hour_counts)} patients (filtering disabled)")
-            df_temp = df.copy()
-        
-        # Aggregate to one row per patient
-        agg_dict = {}
-        for col in df_temp.columns:
-            if col == patient_id_column:
-                continue
-            elif col in ['hour', 'chart_hour']:
-                agg_dict[col] = 'max'
-            elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
-                agg_dict[col] = 'first'
-            elif df_temp[col].dtype in ['float64', 'int64']:
-                agg_dict[col] = 'mean'
-            else:
-                agg_dict[col] = 'first'
-        
-        df_aggregated = df_temp.groupby(patient_id_column).agg(agg_dict).reset_index()
-        print(f"\nAggregated data shape: {df_aggregated.shape}")
-        
-        return df_aggregated
     
     # Apply filtering and aggregation if filter_hours is specified
     if filter_hours is not None:
@@ -1092,60 +1087,4 @@ def run_gbtm_pipeline(df, exclude_cols, db_name, k_range=range(2, 7),
     return results
 
 
-def filter_and_aggregate_patients(df, patient_id_column='stay_id', max_hours=24, filter_enabled=True):
-    """
-    Dynamically filter patients by hour count and aggregate to one row per patient.
-    
-    Args:
-        df: Input dataframe
-        patient_id_column: Column name for patient ID
-        max_hours: Maximum hours threshold for filtering (if filter_enabled=True)
-        filter_enabled: If False, skip filtering and aggregate all patients
-    
-    Returns:
-        Aggregated dataframe with one row per patient
-    """
-    print(f"\nInitial data shape: {df.shape}")
-    print(f"Number of unique patients: {df[patient_id_column].nunique()}")
-    
-    # Check hour distribution
-    patient_hour_counts = df.groupby(patient_id_column).size().reset_index(name='n_hours')
-    print(f"\nPatient hour distribution:")
-    print(f"  Min: {patient_hour_counts['n_hours'].min()}")
-    print(f"  Max: {patient_hour_counts['n_hours'].max()}")
-    print(f"  Mean: {patient_hour_counts['n_hours'].mean():.1f}")
-    print(f"  Median: {patient_hour_counts['n_hours'].median():.1f}")
-    
-    # Dynamic filtering
-    if filter_enabled:
-        patients_filtered = patient_hour_counts[patient_hour_counts['n_hours'] <= max_hours][patient_id_column]
-        print(f"\nPatients with ≤{max_hours}h: {len(patients_filtered)} ({len(patients_filtered)/len(patient_hour_counts)*100:.1f}%)")
-        
-        if len(patients_filtered) == 0:
-            print(f"  ⚠ WARNING: No patients with ≤{max_hours}h found. Using all patients instead.")
-            df_temp = df.copy()
-        else:
-            df_temp = df[df[patient_id_column].isin(patients_filtered)].copy()
-            print(f"  ✓ Filtering applied: {len(patients_filtered)} patients selected")
-    else:
-        print(f"\n  Using all {len(patient_hour_counts)} patients (filtering disabled)")
-        df_temp = df.copy()
-    
-    # Aggregate to one row per patient
-    agg_dict = {}
-    for col in df_temp.columns:
-        if col == patient_id_column:
-            continue
-        elif col in ['hour', 'chart_hour']:
-            agg_dict[col] = 'max'
-        elif col in ['age_at_admission', 'sofa_total', 'phenotype', 'sofa_cat']:
-            agg_dict[col] = 'first'
-        elif df_temp[col].dtype in ['float64', 'int64']:
-            agg_dict[col] = 'mean'
-        else:
-            agg_dict[col] = 'first'
-    
-    df_aggregated = df_temp.groupby(patient_id_column).agg(agg_dict).reset_index()
-    print(f"\nAggregated data shape: {df_aggregated.shape}")
-    
-    return df_aggregated
+
