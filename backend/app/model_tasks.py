@@ -10,6 +10,8 @@ from app.kmeans_pipeline import run_consensus_pipeline
 from app.lca_pipeline import run_lca_pipeline
 from app.dtw_pipeline import run_kmeans_dtw_pipeline
 from app.gbtm_pipeline import run_gbtm_pipeline
+from app.send_email import send_model_completed_email, send_model_failed_email
+from app.storage import UserStorage, RunStorage
 
 def update_run_status(run_id: int, updates: dict):
     """Update run status in JSON file"""
@@ -146,6 +148,27 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
         
         print(f"Notes file created successfully at: {notes_file}")
 
+        # Update run status to completed
+        update_run_status(run_id, {
+            'status': 'completed',
+            'optimal_clusters': results.get('optimal_k'),
+            'completed_at': datetime.utcnow().isoformat()
+        })
+        
+        # Send completion email
+        run = RunStorage.get_by_id(run_id)
+        if run:
+            user = UserStorage.get_by_id(run['user_id'])
+            if user:
+                print(f"Sending completion email to {user['email']}")
+                send_model_completed_email(
+                    to_email=user['email'],
+                    to_name=user['email'].split('@')[0],
+                    run_id=run_id,
+                    model_type=model_type,
+                    optimal_clusters=results.get('optimal_k')
+                )
+
         return {
             "status": "success",
             "optimal_clusters": results.get('optimal_k'),
@@ -153,9 +176,27 @@ def train_model(self, run_id: int, model_type: str, dataset_path: str, parameter
         }
     
     except Exception as e:
+        print(f"Error in train_model task: {str(e)}")
         update_run_status(run_id, {
             'status': 'failed',
             'completed_at': datetime.utcnow().isoformat()
         })
+        
+        # Send failure email
+        try:
+            run = RunStorage.get_by_id(run_id)
+            if run:
+                user = UserStorage.get_by_id(run['user_id'])
+                if user:
+                    print(f"Sending failure email to {user['email']}")
+                    send_model_failed_email(
+                        to_email=user['email'],
+                        to_name=user['email'].split('@')[0],
+                        run_id=run_id,
+                        model_type=model_type
+                    )
+        except Exception as email_error:
+            print(f"Error sending failure email: {str(email_error)}")
+        
         raise e
         
