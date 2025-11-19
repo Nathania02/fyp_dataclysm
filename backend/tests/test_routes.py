@@ -423,9 +423,8 @@ class TestCreateRunEndpoint:
 class TestGetRunWithStatusUpdate:
     """Test get_run endpoint with status updates"""
     
-    @patch('app.routes.send_model_completed_email')
     @patch('app.routes.AsyncResult')
-    def test_get_run_updates_to_completed(self, mock_async_result, mock_email, client, test_storage_files, auth_token, test_run):
+    def test_get_run_updates_to_completed(self, mock_async_result, client, test_storage_files, auth_token, test_run):
         """Test that get_run updates status when task completes"""
         from app.storage import RunStorage
         
@@ -441,8 +440,6 @@ class TestGetRunWithStatusUpdate:
         mock_task.result = {'status': 'success', 'optimal_clusters': 4}
         mock_async_result.return_value = mock_task
         
-        mock_email.return_value = True
-        
         response = client.get(
             f"/api/runs/{test_run['id']}",
             headers={"Authorization": f"Bearer {auth_token}"}
@@ -453,12 +450,10 @@ class TestGetRunWithStatusUpdate:
         assert data['status'] == 'completed'
         assert data['optimal_clusters'] == 4
         
-        # Verify email was sent
-        mock_email.assert_called_once()
+        # Note: Email is now sent from Celery task, not from the route endpoint
     
-    @patch('app.routes.send_model_failed_email')
     @patch('app.routes.AsyncResult')
-    def test_get_run_updates_to_failed(self, mock_async_result, mock_email, client, test_storage_files, auth_token, test_run):
+    def test_get_run_updates_to_failed(self, mock_async_result, client, test_storage_files, auth_token, test_run):
         """Test that get_run updates status when task fails"""
         from app.storage import RunStorage
         
@@ -473,8 +468,6 @@ class TestGetRunWithStatusUpdate:
         mock_task.result = None  # Failed task returns None
         mock_async_result.return_value = mock_task
         
-        mock_email.return_value = True
-        
         response = client.get(
             f"/api/runs/{test_run['id']}",
             headers={"Authorization": f"Bearer {auth_token}"}
@@ -484,8 +477,7 @@ class TestGetRunWithStatusUpdate:
         data = response.json()
         assert data['status'] == 'failed'
         
-        # Verify failure email was sent
-        mock_email.assert_called_once()
+        # Note: Email is now sent from Celery task, not from the route endpoint
     
     @patch('app.routes.AsyncResult')
     def test_get_run_task_not_ready(self, mock_async_result, client, test_storage_files, auth_token, test_run):
